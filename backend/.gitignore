@@ -1,0 +1,71 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+build/
+*.tsbuildinfo
+
+# ── Environment files ─────────────────────────────────────────────────────────
+# Tracked: only .env.example (variable shape, no values)
+.env
+.env.*
+!.env.example
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Runtime data ──────────────────────────────────────────────────────────────
+# User uploads should never be committed — they may contain PII, copyrighted
+# content, or arbitrary binaries from end-users.
+uploads/
+!uploads/.gitkeep
+
+# Process IDs, sockets
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ── Test / coverage ───────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+.cache/
+.npm/
+.eslintcache
+.parcel-cache/
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS junk ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Secrets / credentials (defence in depth) ─────────────────────────────────
+# Should never be checked in even by accident — the .env rule above covers
+# the canonical location, but these patterns catch common slip-ups.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials.json
+service-account*.json

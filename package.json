@@ -1,0 +1,14 @@
+{
+  "name": "saas-dashboard",
+  "version": "1.0.0",
+  "description": "Full-Stack MERN SaaS Admin Dashboard",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "install:all": "npm install && npm install --prefix frontend && npm install --prefix backend"
+  }
+}
