@@ -242,13 +242,15 @@ https://your-app.vercel.app,https://your-app-git-staging.vercel.app
 
 ### Step 5: Vercel-specific build notes
 
-**The frontend depends on `patch-package`.** This Next.js 16.2.6 release has a known `workStore`-initialisation bug during static export of the synthetic `/_global-error` route. The fix lives in `frontend/patches/next+16.2.6.patch` and is applied automatically by `patch-package` via the `postinstall` script. Do not remove either — without them, the build fails with `InvariantError: Expected workStore to be initialized`.
+**The frontend ships a runtime patch for a known Next.js 16.2.6 bug.** Static export of the synthetic `/_global-error` route fails with `InvariantError: Expected workStore to be initialized`. The fix is applied automatically by `frontend/scripts/patch-next-build.js`, which runs as the `postinstall` script. It is idempotent (a `// PATCHED` marker prevents re-application) and uses `require.resolve` to locate `next` so it works whether npm hoists the package to `frontend/node_modules/` (Vercel) or to the workspace root (local).
 
-**The patch file MUST be committed to git.** Verify before pushing:
+**Why a custom script instead of `patch-package`.** In a workspace setup, npm hoisting puts `next` in different locations depending on whether the install runs from the workspace root or a subpackage. `patch-package` only looks at `<cwd>/node_modules/<pkg>`, so it silently fails on whichever side doesn't match. The custom script sidesteps this by following the standard Node module-resolution chain.
+
+**The script MUST be committed to git.** Verify before pushing:
 
 ```powershell
-git status frontend/patches/
-git status frontend/package.json   # confirm devDependencies.patch-package and scripts.postinstall present
+git status frontend/scripts/patch-next-build.js
+git status frontend/package.json   # confirm scripts.postinstall is "node ./scripts/patch-next-build.js"
 ```
 
 **Vercel build command.** Leave it at the default `npm install && npm run build`. npm's `postinstall` lifecycle fires automatically — no extra config needed. Do NOT add a `prebuild` script.
@@ -259,11 +261,11 @@ git status frontend/package.json   # confirm devDependencies.patch-package and s
 
 Before clicking Deploy:
 
-- [ ] `frontend/patches/next+16.2.6.patch` exists and is committed
-- [ ] `frontend/package.json` has `"postinstall": "patch-package"` in scripts
-- [ ] `frontend/package.json` has `"patch-package"` in devDependencies
+- [ ] `frontend/scripts/patch-next-build.js` exists and is committed
+- [ ] `frontend/package.json` has `"postinstall": "node ./scripts/patch-next-build.js"` in scripts
 - [ ] `frontend/package.json` has **no** `prebuild` script
-- [ ] `frontend/scripts/patch-next-build.js` does **not** exist (the old hack)
+- [ ] `frontend/patches/` directory does **not** exist (the old patch-package approach)
+- [ ] `frontend/package.json` has **no** `patch-package` devDependency
 - [ ] `NEXT_PUBLIC_API_URL` set in Vercel project settings → Environment Variables
 - [ ] `NEXT_PUBLIC_SOCKET_URL` set in Vercel project settings → Environment Variables
 - [ ] `frontend/.env.local` is in `.gitignore` (verify with `git check-ignore -v frontend/.env.local`)
@@ -311,10 +313,10 @@ Run through this end-to-end:
 
 **Vercel build fails with `npm run build exited with 1` and no useful trace above it**
 - Almost certainly one of:
-  - **`patches/` not committed.** `git ls-files frontend/patches/` should show `next+16.2.6.patch`. If missing, the postinstall has nothing to apply and the synthetic `/_global-error` route throws `workStore` invariant during static export.
-  - **`patch-package` missing from `devDependencies`.** Run `npm install --save-dev patch-package --workspace=frontend` and commit.
-  - **`postinstall` script missing or renamed.** Must be exactly `"postinstall": "patch-package"` in `frontend/package.json`.
-  - **A `prebuild` script reintroduced.** The old hack monkey-patched node_modules from a script — fragile on fresh CI installs. Remove any `prebuild` entry.
+  - **`scripts/patch-next-build.js` not committed.** `git ls-files frontend/scripts/patch-next-build.js` should return the file. If missing, the postinstall has nothing to run and the synthetic `/_global-error` route throws `workStore` invariant during static export.
+  - **`postinstall` script missing or renamed.** Must be exactly `"postinstall": "node ./scripts/patch-next-build.js"` in `frontend/package.json`.
+  - **A `prebuild` script reintroduced.** Remove any `prebuild` entry — the postinstall handles everything.
+  - **Next.js version drift.** The script asserts `next === 16.2.6`. If the installed version changes, re-validate the patch against the new source and bump `EXPECTED_NEXT_VERSION` in the script.
 
 **Vercel build fails with `Module not found: Can't resolve 'hasown'` (or similar transitive)**
 - The Root Directory in Vercel project settings isn't set to `frontend`. When Root Directory is the repo root, Vercel's install respects the workspace declaration and hoists transitive deps to `Dashboard/node_modules/` — out of `frontend/node_modules/` where Next.js's `outputFileTracingRoot` looks. Set Root Directory to `frontend` and redeploy.
