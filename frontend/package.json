@@ -44,5 +44,12 @@
     "patch-package": "^8.0.1",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "//optionalDependencies": "Force npm to record Linux native binaries in package-lock.json so Vercel (Linux) can resolve them. Without this, a Windows-generated lockfile only contains the win32-msvc variants and `npm ci` on Linux skips them silently — Tailwind 4's PostCSS plugin and lightningcss then fail to find their native bindings at build time.",
+  "optionalDependencies": {
+    "lightningcss-linux-x64-gnu": "^1.32.0",
+    "lightningcss-linux-arm64-gnu": "^1.32.0",
+    "@tailwindcss/oxide-linux-x64-gnu": "^4.3.0",
+    "@tailwindcss/oxide-linux-arm64-gnu": "^4.3.0"
   }
 }

@@ -17,24 +17,24 @@ const nextConfig: NextConfig = {
   },
 
   /**
-   * Explicitly set the output file tracing root to this package directory.
+   * Output file tracing + Turbopack root.
    *
-   * WHY: When a monorepo has a package-lock.json at the repo root AND another
-   * one inside the Next.js package folder, Next.js 16 misidentifies the
-   * workspace root and emits a warning on every build. Pointing
-   * `outputFileTracingRoot` at __dirname (the frontend/ folder) silences the
-   * warning and ensures that only files reachable from this package are
-   * included in the output file trace — important for the `standalone` output
-   * used in Docker deployments.
+   * Pointed at the WORKSPACE root (one level above `frontend/`), not at
+   * `frontend/` itself. The previous, narrower setting broke local production
+   * builds in workspace mode: npm hoists shared deps (incl. Next.js itself, plus
+   * transitive packages like `hasown`, `debug`, `get-intrinsic`) up to
+   * `<repo>/node_modules/`, where Turbopack — pinned to `frontend/` — could not
+   * find them and emitted "module not found" errors.
+   *
+   * On Vercel the Root Directory is `frontend`, so `frontend/`'s parent is the
+   * deploy working directory which contains no node_modules — the `..`
+   * resolution is harmless. Locally it allows Turbopack to walk up to the real
+   * workspace root and resolve hoisted dependencies.
    */
-  outputFileTracingRoot: path.resolve(__dirname),
+  outputFileTracingRoot: path.resolve(__dirname, '..'),
 
-  /**
-   * Turbopack root — same reasoning as above but for Turbopack's module
-   * resolution graph (used by `next dev` and `next build` in Next.js 16+).
-   */
   turbopack: {
-    root: path.resolve(__dirname),
+    root: path.resolve(__dirname, '..'),
   },
 };
 
