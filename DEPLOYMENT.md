@@ -240,6 +240,35 @@ If you use preview deployments, add those URLs too (comma-separated):
 https://your-app.vercel.app,https://your-app-git-staging.vercel.app
 ```
 
+### Step 5: Vercel-specific build notes
+
+**The frontend depends on `patch-package`.** This Next.js 16.2.6 release has a known `workStore`-initialisation bug during static export of the synthetic `/_global-error` route. The fix lives in `frontend/patches/next+16.2.6.patch` and is applied automatically by `patch-package` via the `postinstall` script. Do not remove either — without them, the build fails with `InvariantError: Expected workStore to be initialized`.
+
+**The patch file MUST be committed to git.** Verify before pushing:
+
+```powershell
+git status frontend/patches/
+git status frontend/package.json   # confirm devDependencies.patch-package and scripts.postinstall present
+```
+
+**Vercel build command.** Leave it at the default `npm install && npm run build`. npm's `postinstall` lifecycle fires automatically — no extra config needed. Do NOT add a `prebuild` script.
+
+**Workspaces work transparently on Vercel.** Setting Root Directory = `frontend` means Vercel runs `npm install` from inside `frontend/`. The root `package.json` workspace declaration is not visible to that install — Vercel sees `frontend/` as a standalone project, so all transitive deps (including `hasown`, which is hoisted to the workspace root locally) get installed into `frontend/node_modules/` correctly.
+
+### Vercel pre-flight checklist
+
+Before clicking Deploy:
+
+- [ ] `frontend/patches/next+16.2.6.patch` exists and is committed
+- [ ] `frontend/package.json` has `"postinstall": "patch-package"` in scripts
+- [ ] `frontend/package.json` has `"patch-package"` in devDependencies
+- [ ] `frontend/package.json` has **no** `prebuild` script
+- [ ] `frontend/scripts/patch-next-build.js` does **not** exist (the old hack)
+- [ ] `NEXT_PUBLIC_API_URL` set in Vercel project settings → Environment Variables
+- [ ] `NEXT_PUBLIC_SOCKET_URL` set in Vercel project settings → Environment Variables
+- [ ] `frontend/.env.local` is in `.gitignore` (verify with `git check-ignore -v frontend/.env.local`)
+- [ ] `npm run build` succeeds locally from `frontend/` (after `npm install`)
+
 ---
 
 ## 5. Verification checklist
@@ -279,6 +308,19 @@ Run through this end-to-end:
 
 **Render service shows "Healthy" but auth requests fail**
 - Trust proxy issue. `app.set('trust proxy', 1)` is already enabled in production (`backend/src/app.ts`). If you customise further, ensure `X-Forwarded-*` headers are honoured for the rate limiter and secure-cookie checks.
+
+**Vercel build fails with `npm run build exited with 1` and no useful trace above it**
+- Almost certainly one of:
+  - **`patches/` not committed.** `git ls-files frontend/patches/` should show `next+16.2.6.patch`. If missing, the postinstall has nothing to apply and the synthetic `/_global-error` route throws `workStore` invariant during static export.
+  - **`patch-package` missing from `devDependencies`.** Run `npm install --save-dev patch-package --workspace=frontend` and commit.
+  - **`postinstall` script missing or renamed.** Must be exactly `"postinstall": "patch-package"` in `frontend/package.json`.
+  - **A `prebuild` script reintroduced.** The old hack monkey-patched node_modules from a script — fragile on fresh CI installs. Remove any `prebuild` entry.
+
+**Vercel build fails with `Module not found: Can't resolve 'hasown'` (or similar transitive)**
+- The Root Directory in Vercel project settings isn't set to `frontend`. When Root Directory is the repo root, Vercel's install respects the workspace declaration and hoists transitive deps to `Dashboard/node_modules/` — out of `frontend/node_modules/` where Next.js's `outputFileTracingRoot` looks. Set Root Directory to `frontend` and redeploy.
+
+**Vercel build hangs at "Collecting page data"**
+- Almost always a server-side import of a browser-only API (`window`, `document`, `localStorage`). Audit recent imports: any file pulled in by a server component (or a layout) must guard with `typeof window !== 'undefined'` or be marked `'use client'`.
 
 ---
 
