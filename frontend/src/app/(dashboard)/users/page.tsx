@@ -5,6 +5,7 @@ import { Shield, Trash2, UserCheck, UserX } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useUsers, useToggleUserStatus, useDeleteUser } from '@/hooks/useUsers';
 import { DataTable } from '@/components/ui/data-table';
+import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { Pagination } from '@/components/ui/pagination';
 import { PageHeader } from '@/components/ui/page-header';
 import { RoleBadge } from '@/components/ui/status-badge';
@@ -167,6 +168,55 @@ export default function UsersPage() {
               emptyMessage="No users found"
               emptyIcon={<Shield className="w-12 h-12" />}
               skeletonRows={limit}
+              renderMobileCard={(u) => (
+                <MobileCard>
+                  <MobileCardHeader>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <Avatar className="w-9 h-9 shrink-0">
+                        <AvatarImage src={u.avatar} />
+                        <AvatarFallback className="text-xs font-bold bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400">
+                          {getInitials(u.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{u.name}</p>
+                        <p className="text-xs text-muted-foreground/70 truncate">{u.email}</p>
+                      </div>
+                    </div>
+                    <RoleBadge role={u.role} />
+                  </MobileCardHeader>
+                  <MobileCardField label="Status"><UserStatusBadge active={u.isActive} /></MobileCardField>
+                  <MobileCardField label="Last login">
+                    <span className="text-muted-foreground/70">
+                      {u.lastLogin ? formatRelativeTime(u.lastLogin) : '—'}
+                    </span>
+                  </MobileCardField>
+                  <MobileCardField label="Joined">
+                    <span className="text-muted-foreground/70">{formatDate(u.createdAt)}</span>
+                  </MobileCardField>
+                  <MobileCardActions>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                      onClick={() => toggleStatus.mutate(u._id)}
+                      disabled={toggleStatus.isPending}
+                    >
+                      {u.isActive
+                        ? <><UserX className="w-3.5 h-3.5 text-amber-500" aria-hidden="true" /> Deactivate</>
+                        : <><UserCheck className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" /> Activate</>}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs text-destructive hover:text-destructive"
+                      onClick={() => setDeleteId(u._id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Delete
+                    </Button>
+                  </MobileCardActions>
+                </MobileCard>
+              )}
             />
 
             {data?.meta && data.meta.pages > 0 && (

@@ -23,7 +23,7 @@ export const getCustomers = asyncHandler(async (req: Request, res: Response) => 
   const skip = (pageNum - 1) * limitNum;
 
   const [customers, total] = await Promise.all([
-    Customer.find(query).sort(sort).skip(skip).limit(limitNum),
+    Customer.find(query).sort(sort).skip(skip).limit(limitNum).lean(),
     Customer.countDocuments(query),
   ]);
 
@@ -37,8 +37,8 @@ export const getCustomers = asyncHandler(async (req: Request, res: Response) => 
 
 export const getCustomer = asyncHandler(async (req: Request, res: Response) => {
   const [customer, orders] = await Promise.all([
-    Customer.findById(req.params.id),
-    Order.find({ customer: req.params.id }).sort('-createdAt').limit(10),
+    Customer.findById(req.params.id).lean(),
+    Order.find({ customer: req.params.id }).sort('-createdAt').limit(10).lean(),
   ]);
   if (!customer) throw new ApiError(404, 'Customer not found');
   sendSuccess(res, { customer, recentOrders: orders });

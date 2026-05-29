@@ -4,6 +4,7 @@ import Customer from '../models/Customer';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
+import { escapeRegex } from '../utils/sanitize';
 import { randomUUID } from 'crypto';
 
 const generateOrderNumber = () => `ORD-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -23,7 +24,7 @@ export const getOrders = asyncHandler(async (req: Request, res: Response) => {
   const query: Record<string, unknown> = {};
   if (status) query.status = status;
   if (paymentStatus) query.paymentStatus = paymentStatus;
-  if (search) query.orderNumber = { $regex: search, $options: 'i' };
+  if (search) query.orderNumber = { $regex: escapeRegex(search), $options: 'i' };
   if (startDate || endDate) {
     query.createdAt = {};
     if (startDate) (query.createdAt as Record<string, unknown>).$gte = new Date(startDate);
@@ -39,7 +40,8 @@ export const getOrders = asyncHandler(async (req: Request, res: Response) => {
       .sort(sort)
       .skip(skip)
       .limit(limitNum)
-      .populate('customer', 'name email avatar'),
+      .populate('customer', 'name email avatar')
+      .lean(),
     Order.countDocuments(query),
   ]);
 
@@ -54,7 +56,8 @@ export const getOrders = asyncHandler(async (req: Request, res: Response) => {
 export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   const order = await Order.findById(req.params.id)
     .populate('customer', 'name email phone avatar')
-    .populate('items.product', 'name thumbnail sku');
+    .populate('items.product', 'name thumbnail sku')
+    .lean();
   if (!order) throw new ApiError(404, 'Order not found');
   sendSuccess(res, order);
 });

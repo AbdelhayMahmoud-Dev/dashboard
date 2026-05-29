@@ -15,6 +15,7 @@ import analyticsRoutes from './routes/analytics.routes';
 import userRoutes from './routes/user.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler, notFound } from './middleware/errorHandler';
+import { requestId } from './middleware/requestId';
 import { logger, morganStream } from './utils/logger';
 import { swaggerSpec } from './config/swagger';
 import swaggerUi from 'swagger-ui-express';
@@ -26,6 +27,10 @@ const app = express();
 // flood the logs.
 const isHealthPath = (path: string): boolean =>
   path === '/health' || path === '/api/v1/health';
+
+// Never throttle the test runner — integration tests fire many auth requests
+// from a single IP and would otherwise hit the limiter mid-suite.
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 // Security headers
 app.use(
@@ -51,6 +56,10 @@ app.use(
 
 // Remove fingerprinting headers
 app.disable('x-powered-by');
+
+// Correlation id for every request (echoed as X-Request-Id) — set early so all
+// downstream logs and error responses can reference the same id.
+app.use(requestId);
 
 /**
  * Strip trailing slashes so "https://app.com/" and "https://app.com" compare
@@ -135,7 +144,7 @@ const globalLimiter = rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => isHealthPath(req.path),
+  skip: (req) => isHealthPath(req.path) || isTestEnv,
 });
 
 const authLimiter = rateLimit({
@@ -144,6 +153,7 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many auth attempts, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isTestEnv,
 });
 
 app.use(globalLimiter);
@@ -175,12 +185,18 @@ if (process.env.NODE_ENV === 'production') {
 app.use('/health', healthRoutes);
 app.use('/api/v1/health', healthRoutes);
 
-// API Docs (available in all environments; restrict in prod via env if needed)
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'SaaS Dashboard API',
-}));
-app.get('/api-docs.json', (_req, res) => res.json(swaggerSpec));
+// API Docs — exposing the full API surface (every route, shape, and auth
+// requirement) to anonymous callers in production is needless attack-surface
+// disclosure. Serve docs only outside production, unless ENABLE_API_DOCS=true
+// is explicitly set (e.g. for a gated internal staging environment).
+const docsEnabled = !env.isProd || env.ENABLE_API_DOCS === 'true';
+if (docsEnabled) {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'SaaS Dashboard API',
+  }));
+  app.get('/api-docs.json', (_req, res) => res.json(swaggerSpec));
+}
 
 // Routes (v1)
 app.use('/api/v1/auth', authLimiter, authRoutes);

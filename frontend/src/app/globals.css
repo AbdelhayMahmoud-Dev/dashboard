@@ -343,3 +343,18 @@
   .animate-slide-up { animation: slide-up-fade 0.3s ease-out; }
 
 }
+
+/* ── Reduced motion (WCAG 2.3.3) ──────────────────────────────────────────────
+   Users who set "reduce motion" at the OS level get near-instant transitions
+   and no looping animations. Complements Framer Motion's <MotionConfig
+   reducedMotion="user"> by covering plain CSS transitions / keyframe utilities. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

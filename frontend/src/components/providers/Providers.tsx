@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
+import { MotionConfig } from 'framer-motion';
 import { Toaster } from 'sonner';
 import { makeQueryClient } from '@/lib/queryClient';
 
@@ -24,7 +25,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
         enableSystem
         disableTransitionOnChange
       >
-        {children}
+        {/* Respect the OS "reduce motion" setting — Framer Motion will skip
+            transform/layout animations for users who request it (a11y / WCAG
+            2.3.3) without us having to guard every motion component. */}
+        <MotionConfig reducedMotion="user">
+          {children}
+        </MotionConfig>
         <Toaster
           position="top-right"
           richColors

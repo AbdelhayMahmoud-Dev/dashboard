@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
+import { useState, useCallback, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,7 +17,7 @@ import { TextField } from '@/components/ui/form-field';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { formatDate, getInitials } from '@/utils/format';
+import { formatDate, getInitials, formatRole } from '@/utils/format';
 import {
   Loader2, Moon, Sun, Bell, Shield, AlertTriangle, Monitor, User as UserIcon, Palette,
 } from 'lucide-react';
@@ -60,24 +60,48 @@ const DEFAULT_PREFS: NotifPrefs = {
   weeklyDigest:   false,
 };
 
-function useNotifPrefs() {
-  const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_PREFS);
+// Reactive, SSR-safe read of the localStorage-backed prefs via
+// useSyncExternalStore (same pattern as useUrlHash below) — no set-state-in-effect.
+// getSnapshot MUST return a stable reference, so we cache the parsed object and
+// only recompute when the underlying raw string actually changes.
+let cachedRaw: string | null = null;
+let cachedPrefs: NotifPrefs = DEFAULT_PREFS;
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(NOTIF_KEY);
-      if (stored) setPrefs(JSON.parse(stored) as NotifPrefs);
-    } catch {
-      // ignore parse errors
-    }
-  }, []);
+function readNotifPrefs(): NotifPrefs {
+  if (typeof window === 'undefined') return DEFAULT_PREFS;
+  const raw = localStorage.getItem(NOTIF_KEY);
+  if (raw === cachedRaw) return cachedPrefs;
+  cachedRaw = raw;
+  try {
+    cachedPrefs = raw
+      ? { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<NotifPrefs>) }
+      : DEFAULT_PREFS;
+  } catch {
+    cachedPrefs = DEFAULT_PREFS;
+  }
+  return cachedPrefs;
+}
+
+const notifListeners = new Set<() => void>();
+const subscribeNotif = (cb: () => void): (() => void) => {
+  notifListeners.add(cb);
+  if (typeof window !== 'undefined') window.addEventListener('storage', cb);
+  return () => {
+    notifListeners.delete(cb);
+    if (typeof window !== 'undefined') window.removeEventListener('storage', cb);
+  };
+};
+const getNotifServerSnapshot = (): NotifPrefs => DEFAULT_PREFS;
+
+function useNotifPrefs() {
+  const prefs = useSyncExternalStore(subscribeNotif, readNotifPrefs, getNotifServerSnapshot);
 
   const update = useCallback(<K extends keyof NotifPrefs>(key: K, value: NotifPrefs[K]) => {
-    setPrefs((prev) => {
-      const next = { ...prev, [key]: value };
-      try { localStorage.setItem(NOTIF_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
+    const next = { ...readNotifPrefs(), [key]: value };
+    try { localStorage.setItem(NOTIF_KEY, JSON.stringify(next)); } catch {}
+    // The 'storage' event does NOT fire in the tab that made the change, so
+    // notify local subscribers directly to trigger a re-render here.
+    notifListeners.forEach((l) => l());
   }, []);
 
   return { prefs, update };
@@ -312,7 +336,7 @@ export default function SettingsPage() {
                         <p className="text-sm font-medium text-foreground">{user?.name}</p>
                         <p className="text-sm text-muted-foreground">{user?.email}</p>
                         <p className="text-xs text-muted-foreground/70 mt-0.5 capitalize">
-                          {user?.role.replace('_', ' ')}
+                          {formatRole(user?.role)}
                         </p>
                       </div>
                     </div>
@@ -495,7 +519,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">Role</span>
                         <span className="font-medium capitalize">
-                          {user?.role.replace('_', ' ')}
+                          {formatRole(user?.role)}
                         </span>
                       </div>
                     </div>

@@ -37,7 +37,8 @@ export const getProducts = asyncHandler(async (req: Request, res: Response) => {
       .sort(sort)
       .skip(skip)
       .limit(limitNum)
-      .populate('createdBy', 'name email'),
+      .populate('createdBy', 'name email')
+      .lean(),
     Product.countDocuments(query),
   ]);
 
@@ -76,13 +77,16 @@ export const deleteProduct = asyncHandler(async (req: Request, res: Response) =>
   const product = await Product.findById(req.params.id);
   if (!product) throw new ApiError(404, 'Product not found');
 
-  // Remove images from cloudinary
-  for (const imageUrl of product.images) {
-    const publicId = imageUrl.split('/').pop()?.split('.')[0];
-    if (publicId) {
-      await cloudinary.uploader.destroy(`products/${publicId}`).catch(() => {});
-    }
-  }
+  // Remove images from Cloudinary in parallel — they're independent and the DB
+  // row should not wait on N serial network round-trips. Failures are swallowed
+  // per-image so an orphaned asset never blocks the delete.
+  await Promise.all(
+    product.images.map((imageUrl) => {
+      const publicId = imageUrl.split('/').pop()?.split('.')[0];
+      if (!publicId) return Promise.resolve();
+      return cloudinary.uploader.destroy(`products/${publicId}`).catch(() => {});
+    })
+  );
 
   await product.deleteOne();
   sendSuccess(res, null, 'Product deleted');

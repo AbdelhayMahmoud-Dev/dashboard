@@ -48,15 +48,16 @@ export function Pagination({
           </div>
         )}
 
-        <div className="flex items-center gap-1">
+        <nav className="flex items-center gap-1" aria-label="Pagination">
           <Button
             variant="outline"
             size="icon"
             className="w-8 h-8"
             onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
+            aria-label="Previous page"
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
+            <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
           </Button>
 
           {Array.from({ length: Math.min(5, pages) }, (_, i) => {
@@ -77,6 +78,8 @@ export function Pagination({
                 size="icon"
                 className="w-8 h-8 text-xs"
                 onClick={() => onPageChange(p)}
+                aria-label={`Go to page ${p}`}
+                aria-current={p === page ? 'page' : undefined}
               >
                 {p}
               </Button>
@@ -89,10 +92,11 @@ export function Pagination({
             className="w-8 h-8"
             onClick={() => onPageChange(page + 1)}
             disabled={page >= pages}
+            aria-label="Next page"
           >
-            <ChevronRight className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
           </Button>
-        </div>
+        </nav>
       </div>
     </div>
   );

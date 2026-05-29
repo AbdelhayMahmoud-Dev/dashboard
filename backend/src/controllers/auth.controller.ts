@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
+import { env } from '../config/env';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
@@ -8,9 +10,21 @@ import { generateAccessToken, generateRefreshToken } from '../utils/generateToke
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  secure: env.isProd,
   sameSite: 'strict' as const,
 };
+
+/**
+ * We never persist a usable refresh token. We store only its SHA-256 digest,
+ * so a read-only DB leak cannot hand an attacker a live session — the raw
+ * token lives only in the user's HttpOnly cookie. Reuse detection still works
+ * because we compare digests. (The JWT signature already guarantees the token
+ * is one we issued; the digest is purely a leak-containment measure, so a plain
+ * SHA-256 — no per-token salt — is sufficient and keeps the lookup a simple
+ * equality check.)
+ */
+const hashToken = (token: string): string =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -23,7 +37,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   const accessToken = generateAccessToken(user._id.toString(), user.role);
   const refreshToken = generateRefreshToken(user._id.toString());
 
-  user.refreshToken = refreshToken;
+  user.refreshToken = hashToken(refreshToken);
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
@@ -49,7 +63,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const accessToken = generateAccessToken(user._id.toString(), user.role);
   const refreshToken = generateRefreshToken(user._id.toString());
 
-  user.refreshToken = refreshToken;
+  user.refreshToken = hashToken(refreshToken);
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
@@ -60,25 +74,25 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const token = req.cookies?.refreshToken || req.body.refreshToken;
+  const token = req.cookies?.refreshToken || req.body?.refreshToken;
   if (!token) throw new ApiError(401, 'Refresh token not provided');
 
   let decoded: { id: string };
   try {
-    decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as { id: string };
+    decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as { id: string };
   } catch {
     throw new ApiError(401, 'Invalid or expired refresh token');
   }
 
   const user = await User.findById(decoded.id).select('+refreshToken');
-  if (!user || user.refreshToken !== token) {
+  if (!user || user.refreshToken !== hashToken(token)) {
     throw new ApiError(401, 'Refresh token reuse detected');
   }
 
   const accessToken = generateAccessToken(user._id.toString(), user.role);
   const newRefreshToken = generateRefreshToken(user._id.toString());
 
-  user.refreshToken = newRefreshToken;
+  user.refreshToken = hashToken(newRefreshToken);
   await user.save({ validateBeforeSave: false });
 
   res.cookie('refreshToken', newRefreshToken, { ...COOKIE_OPTIONS, maxAge: 7 * 24 * 60 * 60 * 1000 });
@@ -90,7 +104,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   if (token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as { id: string };
+      const decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as { id: string };
       await User.findByIdAndUpdate(decoded.id, { $unset: { refreshToken: 1 } });
     } catch {
       // Token already invalid, proceed with logout
@@ -114,6 +128,7 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
     { name, avatar },
     { new: true, runValidators: true }
   );
+  if (!user) throw new ApiError(404, 'User not found');
   sendSuccess(res, { user }, 'Profile updated');
 });
 

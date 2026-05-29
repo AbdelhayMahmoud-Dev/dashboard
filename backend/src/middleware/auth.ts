@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { ApiError } from '../utils/ApiError';
+import { env } from '../config/env';
 import User, { UserRole } from '../models/User';
 
 interface JwtPayload {
@@ -36,14 +37,17 @@ export const protect = async (req: Request, _res: Response, next: NextFunction) 
       throw new ApiError(401, 'Access denied. No token provided.');
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
 
     const user = await User.findById(decoded.id).select('role isActive permissions');
     if (!user || !user.isActive) {
       throw new ApiError(401, 'User not found or deactivated.');
     }
 
-    req.user = { id: decoded.id, role: decoded.role, permissions: user.permissions };
+    // Trust the DB as the source of truth for role/permissions, NOT the token.
+    // Otherwise a user demoted (or stripped of permissions) after their token
+    // was issued keeps their old access until the token expires.
+    req.user = { id: decoded.id, role: user.role, permissions: user.permissions };
     next();
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {

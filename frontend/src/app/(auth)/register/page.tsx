@@ -51,10 +51,12 @@ export default function RegisterPage() {
             id="name"
             placeholder="John Smith"
             autoComplete="name"
+            aria-invalid={!!errors.name}
+            aria-describedby={errors.name ? 'register-name-error' : undefined}
             {...register('name')}
             className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 focus:border-blue-500"
           />
-          {errors.name && <p className="text-red-400 text-xs">{errors.name.message}</p>}
+          {errors.name && <p id="register-name-error" role="alert" className="text-red-400 text-xs">{errors.name.message}</p>}
         </div>
 
         <div className="space-y-1.5">
@@ -64,10 +66,14 @@ export default function RegisterPage() {
             type="email"
             placeholder="admin@company.com"
             autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            aria-invalid={!!errors.email}
+            aria-describedby={errors.email ? 'register-email-error' : undefined}
             {...register('email')}
             className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 focus:border-blue-500"
           />
-          {errors.email && <p className="text-red-400 text-xs">{errors.email.message}</p>}
+          {errors.email && <p id="register-email-error" role="alert" className="text-red-400 text-xs">{errors.email.message}</p>}
         </div>
 
         <div className="space-y-1.5">
@@ -78,18 +84,26 @@ export default function RegisterPage() {
               type={showPassword ? 'text' : 'password'}
               placeholder="••••••••"
               autoComplete="new-password"
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? 'register-password-error' : 'register-password-hint'}
               {...register('password')}
               className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 focus:border-blue-500 pr-10"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
             >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
             </button>
           </div>
-          {errors.password && <p className="text-red-400 text-xs">{errors.password.message}</p>}
+          {errors.password ? (
+            <p id="register-password-error" role="alert" className="text-red-400 text-xs">{errors.password.message}</p>
+          ) : (
+            <p id="register-password-hint" className="text-slate-500 text-xs">At least 8 characters with uppercase, lowercase, and a number.</p>
+          )}
         </div>
 
         <Button

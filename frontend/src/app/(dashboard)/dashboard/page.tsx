@@ -18,7 +18,6 @@ import {
   CircleDot,
   XCircle,
   Plus,
-  BarChart3,
   RefreshCw,
   Sparkles,
 } from 'lucide-react';

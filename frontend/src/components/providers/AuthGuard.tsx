@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { useIsClient } from '@/hooks/useIsClient';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface Props {
@@ -27,11 +28,9 @@ interface Props {
 export function AuthGuard({ children }: Props) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const router = useRouter();
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
+  // useSyncExternalStore-based mount gate — false on server + first client
+  // render, true after hydration — without the set-state-in-effect antipattern.
+  const hasMounted = useIsClient();
 
   useEffect(() => {
     if (hasMounted && !isAuthenticated) {
@@ -62,11 +61,9 @@ export function AuthGuard({ children }: Props) {
 export function GuestGuard({ children }: Props) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const router = useRouter();
-  const [hasMounted, setHasMounted] = useState(false);
-
-  useEffect(() => {
-    setHasMounted(true);
-  }, []);
+  // useSyncExternalStore-based mount gate — false on server + first client
+  // render, true after hydration — without the set-state-in-effect antipattern.
+  const hasMounted = useIsClient();
 
   useEffect(() => {
     if (hasMounted && isAuthenticated) {

@@ -12,12 +12,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { getInitials } from '@/utils/format';
+import { getInitials, formatRole } from '@/utils/format';
 
 // ── Breadcrumb segments ────────────────────────────────────────────────────────
 const ROUTE_LABELS: Record<string, string> = {
@@ -165,42 +166,51 @@ export function Navbar() {
               <div className="hidden sm:block text-left">
                 <p className="text-xs font-semibold text-foreground leading-none">{user.name}</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 capitalize leading-none">
-                  {user.role.replace('_', ' ')}
+                  {formatRole(user.role)}
                 </p>
               </div>
             </DropdownMenuTrigger>
 
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="font-normal py-2">
-                <div className="flex items-center gap-2.5">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src={user.avatar} alt="" />
-                    <AvatarFallback className="gradient-brand text-white text-xs font-bold">
-                      {getInitials(user.name)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold">{user.name}</span>
-                    <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+              {/* Menu.GroupLabel MUST be a descendant of Menu.Group — Base UI
+                  throws "MenuGroupContext is missing" when it is placed directly
+                  inside Menu.Popup (DropdownMenuContent). */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="font-normal py-2">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar className="w-8 h-8">
+                      <AvatarImage src={user.avatar} alt="" />
+                      <AvatarFallback className="gradient-brand text-white text-xs font-bold">
+                        {getInitials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">{user.name}</span>
+                      <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                    </div>
                   </div>
-                </div>
-              </DropdownMenuLabel>
+                </DropdownMenuLabel>
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => router.push('/settings')}
-                className="gap-2 text-sm"
-              >
-                <Settings className="w-3.5 h-3.5" aria-hidden="true" />
-                Settings
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={() => router.push('/settings')}
+                  className="gap-2 text-sm"
+                >
+                  <Settings className="w-3.5 h-3.5" aria-hidden="true" />
+                  Settings
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => logout()}
-                className="gap-2 text-sm text-destructive focus:text-destructive focus:bg-destructive/10"
-              >
-                <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-                Sign out
-              </DropdownMenuItem>
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={() => logout()}
+                  className="gap-2 text-sm text-destructive focus:text-destructive focus:bg-destructive/10"
+                >
+                  <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

@@ -78,10 +78,6 @@ function CopyButton({ text }: { text: string }) {
 // ── Timeline ──────────────────────────────────────────────────────────────────
 type TimelineEntry = { status: OrderStatus; timestamp: string; note?: string };
 
-const STATUS_ORDER: OrderStatus[] = [
-  'pending', 'processing', 'shipped', 'delivered',
-];
-
 function TimelineDot({ status }: { status: OrderStatus }) {
   const cfg = ORDER_STATUS_CONFIG[status];
   return (
@@ -137,7 +133,6 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const { data: order, isLoading } = useOrder(id);
   const updateStatus = useUpdateOrderStatus();
-  const [statusNote, setStatusNote] = useState('');
 
   if (isLoading) return <OrderDetailSkeleton />;
   if (!order)    return (

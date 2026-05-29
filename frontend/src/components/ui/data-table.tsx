@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -495,39 +496,46 @@ export function DataTableViewMenu<T>({
         }
       />
       <DropdownMenuContent align="end" className="min-w-[180px]">
-        <DropdownMenuLabel>Density</DropdownMenuLabel>
-        {(['compact', 'default', 'comfortable'] as Density[]).map((d) => (
-          <button
-            key={d}
-            type="button"
-            onClick={() => onDensityChange(d)}
-            className="w-full flex items-center justify-between gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
-          >
-            <span className="capitalize">{d}</span>
-            {density === d && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
-          </button>
-        ))}
+        {/* Each DropdownMenuLabel (Menu.GroupLabel) must be inside a
+            DropdownMenuGroup (Menu.Group) — Base UI throws
+            "MenuGroupContext is missing" otherwise. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Density</DropdownMenuLabel>
+          {(['compact', 'default', 'comfortable'] as Density[]).map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onDensityChange(d)}
+              className="w-full flex items-center justify-between gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
+            >
+              <span className="capitalize">{d}</span>
+              {density === d && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
+            </button>
+          ))}
+        </DropdownMenuGroup>
 
         {columnVisibility && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>Columns</DropdownMenuLabel>
-            {columns
-              .filter((c) => c.hideable !== false && c.header.trim() !== '')
-              .map((c) => {
-                const hidden = columnVisibility.hidden.has(c.key);
-                return (
-                  <button
-                    key={c.key}
-                    type="button"
-                    onClick={() => toggleColumn(c.key)}
-                    className="w-full flex items-center justify-between gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
-                  >
-                    <span>{c.header}</span>
-                    {!hidden && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
-                  </button>
-                );
-              })}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Columns</DropdownMenuLabel>
+              {columns
+                .filter((c) => c.hideable !== false && c.header.trim() !== '')
+                .map((c) => {
+                  const hidden = columnVisibility.hidden.has(c.key);
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      onClick={() => toggleColumn(c.key)}
+                      className="w-full flex items-center justify-between gap-1.5 rounded-md px-1.5 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <span>{c.header}</span>
+                      {!hidden && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+            </DropdownMenuGroup>
           </>
         )}
       </DropdownMenuContent>

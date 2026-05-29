@@ -4,15 +4,19 @@ import AuditLog from '../models/AuditLog';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
+import { escapeRegex } from '../utils/sanitize';
 
 export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const { page = '1', limit = '10', search = '', role = '' } = req.query as Record<string, string>;
 
   const query: Record<string, unknown> = {};
-  if (search) query.$or = [
-    { name: { $regex: search, $options: 'i' } },
-    { email: { $regex: search, $options: 'i' } },
-  ];
+  if (search) {
+    const safe = escapeRegex(search);
+    query.$or = [
+      { name: { $regex: safe, $options: 'i' } },
+      { email: { $regex: safe, $options: 'i' } },
+    ];
+  }
   if (role) query.role = role;
 
   const pageNum = Math.max(1, parseInt(page));
@@ -20,7 +24,7 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const skip = (pageNum - 1) * limitNum;
 
   const [users, total] = await Promise.all([
-    User.find(query).sort('-createdAt').skip(skip).limit(limitNum),
+    User.find(query).sort('-createdAt').skip(skip).limit(limitNum).lean(),
     User.countDocuments(query),
   ]);
 
@@ -85,7 +89,8 @@ export const getAuditLogs = asyncHandler(async (req: Request, res: Response) => 
       .sort('-createdAt')
       .skip(skip)
       .limit(limitNum)
-      .populate('user', 'name email avatar'),
+      .populate('user', 'name email avatar')
+      .lean(),
     AuditLog.countDocuments(),
   ]);
 

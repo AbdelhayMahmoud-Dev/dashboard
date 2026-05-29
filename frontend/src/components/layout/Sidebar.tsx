@@ -18,7 +18,7 @@ import {
 import { motion } from 'framer-motion';
 import { useUIStore } from '@/store/uiStore';
 import { useAuth } from '@/hooks/useAuth';
-import { getInitials } from '@/utils/format';
+import { getInitials, formatRole } from '@/utils/format';
 
 // ── Nav structure ─────────────────────────────────────────────────────────────
 interface NavItem {
@@ -257,7 +257,7 @@ export function Sidebar() {
                   {user.name}
                 </p>
                 <p className="text-[10px] text-sidebar-foreground/45 mt-0.5 capitalize truncate">
-                  {user.role.replace('_', ' ')}
+                  {formatRole(user.role)}
                 </p>
               </div>
             </div>

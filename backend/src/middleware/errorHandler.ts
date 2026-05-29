@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiError } from '../utils/ApiError';
 import { logger } from '../utils/logger';
+import { captureException } from '../config/monitoring';
 import mongoose from 'mongoose';
 
 export const errorHandler = (
@@ -27,23 +28,35 @@ export const errorHandler = (
   }
 
   if (error instanceof ApiError) {
-    if (!error.isOperational) {
-      logger.error('Non-operational error', { error: error.message, path: req.path, stack: error.stack });
+    // Operational errors (validation, 404, auth) are expected — don't alert on
+    // them. Server-side faults (non-operational, or any 5xx) are real incidents:
+    // log with the correlation id and forward to monitoring.
+    if (!error.isOperational || error.statusCode >= 500) {
+      logger.error('Non-operational error', {
+        requestId: req.id,
+        error: error.message,
+        path: req.path,
+        stack: error.stack,
+      });
+      captureException(error, { requestId: req.id, path: req.path });
     }
     return res.status(error.statusCode).json({
       success: false,
       code: error.code ?? 'ERROR',
       message: error.message,
+      requestId: req.id,
       ...(error.errors?.length && { errors: error.errors }),
       ...(process.env.NODE_ENV === 'development' && { stack: error.stack }),
     });
   }
 
-  logger.error('Unhandled error', { error: err.message, path: req.path, stack: err.stack });
+  logger.error('Unhandled error', { requestId: req.id, error: err.message, path: req.path, stack: err.stack });
+  captureException(err, { requestId: req.id, path: req.path });
   return res.status(500).json({
     success: false,
     code: 'INTERNAL_ERROR',
     message: 'Internal server error',
+    requestId: req.id,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };

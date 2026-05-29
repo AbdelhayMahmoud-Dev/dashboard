@@ -7,12 +7,14 @@ import app from './app';
 import { logger } from './utils/logger';
 import connectDB from './config/db';
 import { initRedis } from './config/redis';
+import { initMonitoring } from './config/monitoring';
 import { initSocket } from './socket';
 
 const PORT = env.PORT;
 
 const startServer = async () => {
   try {
+    await initMonitoring(); // no-op unless SENTRY_DSN is set
     await connectDB();
     initRedis(); // non-blocking — app works without Redis
 

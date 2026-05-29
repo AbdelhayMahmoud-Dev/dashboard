@@ -33,10 +33,15 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-store',
       storage: createJSONStorage(() => localStorage),
-      // Persist all three auth fields so the token survives page reloads.
+      // SECURITY: we deliberately do NOT persist the access token. A short-lived
+      // access token in localStorage is exfiltratable by any XSS payload. Instead
+      // we persist only the (non-secret) user profile + the authenticated flag so
+      // the UI can render instantly on reload without a redirect flash. The access
+      // token lives in memory only; on reload it's null, and the first API call
+      // 401s → the axios interceptor silently mints a fresh one from the HttpOnly
+      // refresh cookie and retries. The refresh token never touches JS.
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

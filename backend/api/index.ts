@@ -35,9 +35,13 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import mongoose from 'mongoose';
 import connectDB from '../src/config/db';
+import { initMonitoring } from '../src/config/monitoring';
 import app from '../src/app';
 
 let dbConnection: Promise<void> | null = null;
+
+// Initialise monitoring once per warm instance (no-op unless SENTRY_DSN is set).
+const monitoringReady = initMonitoring().catch(() => {});
 
 /**
  * Open the MongoDB connection once and reuse it across warm invocations.
@@ -62,6 +66,7 @@ export default async function handler(
   res: ServerResponse
 ): Promise<void> {
   try {
+    await monitoringReady;
     await ensureDb();
   } catch {
     res.statusCode = 503;

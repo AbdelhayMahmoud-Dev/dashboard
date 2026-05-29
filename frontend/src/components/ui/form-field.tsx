@@ -20,6 +20,9 @@ interface FieldWrapperProps {
 }
 
 export function FieldWrapper({ label, error, hint, required, className, children, htmlFor }: FieldWrapperProps) {
+  // Must match the `aria-describedby` the field inputs point at, so screen
+  // readers actually announce the error when the field is focused.
+  const errorId = htmlFor ? `${htmlFor}-error` : undefined;
   return (
     <div className={cn('space-y-1.5', className)}>
       {label && (
@@ -33,7 +36,7 @@ export function FieldWrapper({ label, error, hint, required, className, children
       )}
       {children}
       {error?.message && (
-        <p className="text-xs text-destructive" role="alert">{error.message}</p>
+        <p id={errorId} className="text-xs text-destructive" role="alert">{error.message}</p>
       )}
       {hint && !error?.message && (
         <p className="text-xs text-muted-foreground">{hint}</p>
@@ -87,6 +90,7 @@ export const TextareaField = forwardRef<HTMLTextAreaElement, TextareaFieldProps>
           ref={ref}
           id={fieldId}
           aria-invalid={!!error}
+          aria-describedby={error?.message ? `${fieldId}-error` : undefined}
           className={cn(error && 'border-destructive focus-visible:ring-destructive', className)}
           required={required}
           {...props}

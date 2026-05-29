@@ -7,6 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "seed": "ts-node --transpile-only src/scripts/seed.ts",
     "seed:reset": "ts-node --transpile-only src/scripts/seed.ts --fresh",
     "seed:fresh": "ts-node --transpile-only src/scripts/seed.ts --fresh",
@@ -54,12 +56,16 @@
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.1.0",
     "@types/node": "^25.9.1",
+    "@types/supertest": "^7.2.0",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
+    "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.14",
+    "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
   }
 }

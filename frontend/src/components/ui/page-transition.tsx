@@ -1,7 +1,6 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import type { Variants } from 'framer-motion';
 import { fadeUp, staggerContainer, staggerItem } from '@/lib/animations';
 
 export function PageTransition({ children }: { children: React.ReactNode }) {
