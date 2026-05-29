@@ -20,7 +20,13 @@ const transports: winston.transport[] = [
   }),
 ];
 
-if (process.env.NODE_ENV === 'production') {
+// File transports are only safe on a host with a writable, persistent
+// filesystem. Vercel serverless functions run on a read-only FS (only /tmp is
+// writable, and it is ephemeral), so creating DailyRotateFile transports there
+// crashes the function on cold start. Vercel sets VERCEL=1, which we use to
+// skip file logging and rely on the Console transport (captured by Vercel's
+// log drains) instead. Long-lived hosts (Render, Docker, a VM) keep file logs.
+if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
   const logsDir = path.join(process.cwd(), 'logs');
 
   transports.push(
