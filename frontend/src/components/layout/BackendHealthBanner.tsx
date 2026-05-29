@@ -7,17 +7,16 @@ import { cn } from '@/lib/utils';
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
 /**
- * Resolves the backend `/health` URL from `NEXT_PUBLIC_API_URL`.
- * Because `/health` is mounted at the API root (not under `/api/v1`), we
- * extract just the origin from the configured base URL.
+ * Resolves the backend health URL from `NEXT_PUBLIC_API_URL`.
+ * Health is exposed under the versioned API prefix (`/api/v1/health`), so we
+ * probe it off the SAME base used for every other API call. That way this
+ * banner accurately reflects whether real requests will reach the backend —
+ * if `NEXT_PUBLIC_API_URL` is wrong, the probe fails for the same reason the
+ * app's API calls would.
  */
 function getHealthUrl(): string {
   const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
-  try {
-    return new URL('/health', base).toString();
-  } catch {
-    return 'http://localhost:5000/health';
-  }
+  return `${base.replace(/\/+$/, '')}/health`;
 }
 
 async function probeHealth(url: string): Promise<true> {

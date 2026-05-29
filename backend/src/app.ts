@@ -21,6 +21,12 @@ import swaggerUi from 'swagger-ui-express';
 
 const app = express();
 
+// Health probes hit both the unversioned and versioned paths — exempt either
+// from rate limiting and request logging so monitors don't get throttled or
+// flood the logs.
+const isHealthPath = (path: string): boolean =>
+  path === '/health' || path === '/api/v1/health';
+
 // Security headers
 app.use(
   helmet({
@@ -100,7 +106,7 @@ const globalLimiter = rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/health',
+  skip: (req) => isHealthPath(req.path),
 });
 
 const authLimiter = rateLimit({
@@ -116,7 +122,7 @@ app.use(compression());
 app.use(
   morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
     stream: morganStream,
-    skip: (req) => req.path === '/health',
+    skip: (req) => isHealthPath(req.path),
   })
 );
 app.use(express.json({ limit: '10mb' }));
@@ -133,8 +139,12 @@ if (process.env.NODE_ENV === 'production') {
 // hosts (Vercel) have a read-only filesystem, so there is nothing to serve from
 // disk and nothing is ever written locally.
 
-// Health (unversioned — consumed by load balancers & Docker)
+// Health checks, exposed at two paths backed by the same router:
+//   /health        — unversioned; for load balancers, Docker & uptime probes
+//   /api/v1/health — versioned; what API clients (the frontend) probe, so the
+//                    reachability check shares the same base URL as real calls
 app.use('/health', healthRoutes);
+app.use('/api/v1/health', healthRoutes);
 
 // API Docs (available in all environments; restrict in prod via env if needed)
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
