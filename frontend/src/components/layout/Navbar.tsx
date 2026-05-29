@@ -3,7 +3,6 @@
 import { Bell, Menu, Moon, Sun, Settings, LogOut, Search, ChevronRight } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter, usePathname } from 'next/navigation';
-import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useUIStore } from '@/store/uiStore';
 import { useNotificationStore } from '@/store/notificationStore';
@@ -57,7 +56,7 @@ function Breadcrumbs({ pathname }: { pathname: string }) {
 
 // ── Navbar ─────────────────────────────────────────────────────────────────────
 export function Navbar() {
-  const { sidebarCollapsed, sidebarOpen, toggleSidebar, setCommandOpen } = useUIStore();
+  const { sidebarOpen, toggleSidebar, setCommandOpen } = useUIStore();
   const { unreadCount } = useNotificationStore();
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
@@ -65,13 +64,13 @@ export function Navbar() {
   const pathname = usePathname();
 
   return (
-    <motion.header
+    <header
       className={cn(
-        'fixed top-0 right-0 z-20 h-14 flex items-center gap-3 px-4 sm:px-5',
+        // Full-width on mobile; offset by the sidebar width from `lg` up.
+        'fixed top-0 right-0 left-0 z-20 h-14 flex items-center gap-3 px-4 sm:px-5',
         'bg-background/85 backdrop-blur-md border-b border-border',
+        'transition-[left] duration-300 ease-in-out lg:left-[var(--sidebar-w)]',
       )}
-      animate={{ left: sidebarCollapsed ? 68 : 240 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       role="banner"
     >
       {/* Mobile hamburger */}
@@ -206,6 +205,6 @@ export function Navbar() {
           </DropdownMenu>
         )}
       </div>
-    </motion.header>
+    </header>
   );
 }

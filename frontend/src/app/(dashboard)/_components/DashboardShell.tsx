@@ -8,33 +8,34 @@ import { LeaderHint } from '@/components/layout/LeaderHint';
 import { ErrorBoundary } from '@/components/error-boundary/ErrorBoundary';
 import { useUIStore } from '@/store/uiStore';
 import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
-import { motion } from 'framer-motion';
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   useGlobalShortcuts();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen bg-background"
+      // Single source of truth for the sidebar width. The Sidebar, Navbar and
+      // content area all read this var. It only affects layout at `lg` and up —
+      // below `lg` the sidebar is an off-canvas drawer and the content is full-width.
+      style={{ '--sidebar-w': sidebarCollapsed ? '4.25rem' : '15rem' } as React.CSSProperties}
+    >
       <Sidebar />
       <CommandPalette />
       <KeyboardShortcutsDialog />
       <LeaderHint />
-      <motion.div
-        className="flex flex-col min-h-screen"
-        animate={{ paddingLeft: sidebarCollapsed ? 68 : 240 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      >
+      <div className="flex flex-col min-h-screen transition-[padding] duration-300 ease-in-out lg:pl-[var(--sidebar-w)]">
         <Navbar />
         {/* pt-14 matches Navbar height (h-14) */}
-        <main className="flex-1 pt-14" id="main-content" tabIndex={-1}>
-          <div className="p-4 sm:p-6 max-w-[1600px] mx-auto">
+        <main className="flex-1 pt-14 min-w-0" id="main-content" tabIndex={-1}>
+          <div className="p-4 sm:p-6 max-w-[1600px] mx-auto w-full min-w-0">
             <ErrorBoundary>
               {children}
             </ErrorBoundary>
           </div>
         </main>
-      </motion.div>
+      </div>
     </div>
   );
 }

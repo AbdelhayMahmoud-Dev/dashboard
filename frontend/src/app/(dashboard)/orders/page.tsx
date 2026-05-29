@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useOrders } from '@/hooks/useOrders';
 import { DataTable } from '@/components/ui/data-table';
+import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { Pagination } from '@/components/ui/pagination';
 import { PageHeader } from '@/components/ui/page-header';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/ui/status-badge';
@@ -211,6 +212,52 @@ export default function OrdersPage() {
           onRowClick={(o) => router.push(`/orders/${o._id}`)}
           skeletonRows={limit}
           caption="Orders list"
+          renderMobileCard={(o) => {
+            const c = o.customer as Customer;
+            return (
+              <MobileCard onClick={() => router.push(`/orders/${o._id}`)}>
+                <MobileCardHeader>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground font-mono tracking-tight truncate">
+                      {o.orderNumber}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/70">
+                      {formatRelativeTime(o.createdAt)}
+                    </p>
+                  </div>
+                  <OrderStatusBadge status={o.status} />
+                </MobileCardHeader>
+                <MobileCardField label="Customer">
+                  <div className="flex items-center gap-2 justify-end min-w-0">
+                    <Avatar className="w-6 h-6 shrink-0">
+                      <AvatarImage src={c.avatar} />
+                      <AvatarFallback className="text-[10px] font-bold bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-400">
+                        {getInitials(c.name || 'U')}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{c.name}</span>
+                  </div>
+                </MobileCardField>
+                <MobileCardField label="Items">{o.items.length}</MobileCardField>
+                <MobileCardField label="Total">
+                  <span className="font-bold tabular">{formatCurrency(o.total)}</span>
+                </MobileCardField>
+                <MobileCardField label="Payment">
+                  <PaymentStatusBadge status={o.paymentStatus} />
+                </MobileCardField>
+                <MobileCardActions>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    onClick={(e) => { e.stopPropagation(); router.push(`/orders/${o._id}`); }}
+                  >
+                    <Eye className="w-3.5 h-3.5" /> View order
+                  </Button>
+                </MobileCardActions>
+              </MobileCard>
+            );
+          }}
         />
       </motion.div>
 

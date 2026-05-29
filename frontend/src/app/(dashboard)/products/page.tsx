@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useProducts, useDeleteProduct, useProductCategories, PRODUCT_KEYS } from '@/hooks/useProducts';
 import { useModalWithData } from '@/hooks/useModal';
 import { DataTable } from '@/components/ui/data-table';
+import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
 import { Pagination } from '@/components/ui/pagination';
 import { PageHeader } from '@/components/ui/page-header';
 import { ProductStatusBadge } from '@/components/ui/status-badge';
@@ -509,6 +510,53 @@ export default function ProductsPage() {
           skeletonRows={limit}
           isHighlighted={(p) => p.stock === 0}
           caption="Products list"
+          renderMobileCard={(p) => (
+            <MobileCard className={cn(p.stock === 0 && 'border-rose-500/40')}>
+              <MobileCardHeader>
+                <div className="flex items-start gap-3 min-w-0">
+                  <Checkbox
+                    checked={selectedIds.has(p._id)}
+                    onCheckedChange={() => toggleSelect(p._id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${p.name}`}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <ProductNameCell product={p} />
+                </div>
+                <ProductStatusBadge status={p.status} />
+              </MobileCardHeader>
+              <MobileCardField label="Price">
+                <PriceCell price={p.price} comparePrice={p.comparePrice} />
+              </MobileCardField>
+              <MobileCardField label="Category">
+                <span className="text-muted-foreground">{p.category}</span>
+              </MobileCardField>
+              <MobileCardField label="Stock">
+                <StockCell stock={p.stock} />
+              </MobileCardField>
+              <MobileCardField label="Revenue">
+                {formatCurrency(p.price * p.totalSales)}
+              </MobileCardField>
+              <MobileCardActions>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => productModal.open(p)}
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteId(p._id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </Button>
+              </MobileCardActions>
+            </MobileCard>
+          )}
         />
       </motion.div>
 

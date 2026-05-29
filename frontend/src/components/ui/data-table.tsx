@@ -71,6 +71,12 @@ interface DataTableProps<T> {
   columnVisibility?: ColumnVisibilityState;
   /** Rendered above the table inside the same bordered shell — search, filters, view menu, etc. */
   toolbar?:       ReactNode;
+  /**
+   * When provided, the horizontally-scrolling table is hidden below the `md`
+   * breakpoint and each row is rendered as a card instead — eliminating mobile
+   * horizontal overflow. Sorting/selection still apply to the same `displayData`.
+   */
+  renderMobileCard?: (row: T) => ReactNode;
 }
 
 // ── Density tokens ────────────────────────────────────────────────────────────
@@ -187,6 +193,7 @@ export function DataTable<T>({
   selection,
   columnVisibility,
   toolbar,
+  renderMobileCard,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDirection>(null);
@@ -245,10 +252,25 @@ export function DataTable<T>({
 
   const colSpan = visibleColumns.length + (selection ? 1 : 0);
 
+  // Shared empty-state body (used by both the table and the mobile card list).
+  const emptyInner = (
+    <div className="flex flex-col items-center gap-3" role="status" aria-label={emptyMessage}>
+      <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center">
+        {emptyIcon ?? <Inbox className="w-6 h-6 text-muted-foreground/40" aria-hidden="true" />}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-muted-foreground">{emptyMessage}</p>
+        <p className="text-xs text-muted-foreground/60 mt-0.5">
+          Data will appear here once available.
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       {toolbar && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-muted/20">
           {toolbar}
         </div>
       )}
@@ -256,6 +278,8 @@ export function DataTable<T>({
       <div
         className={cn(
           'overflow-x-auto',
+          // When a mobile card renderer is supplied, hide the table on small screens.
+          renderMobileCard && 'hidden md:block',
           maxHeight && 'overflow-y-auto',
         )}
         style={maxHeight ? { maxHeight } : undefined}
@@ -352,27 +376,7 @@ export function DataTable<T>({
             ) : displayData.length === 0 ? (
               <tr>
                 <td colSpan={colSpan} className="px-4 py-16 text-center">
-                  <AnimatePresence>
-                    <motion.div
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col items-center gap-3"
-                      role="status"
-                      aria-label={emptyMessage}
-                    >
-                      <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center">
-                        {emptyIcon ?? (
-                          <Inbox className="w-6 h-6 text-muted-foreground/40" aria-hidden="true" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">{emptyMessage}</p>
-                        <p className="text-xs text-muted-foreground/60 mt-0.5">
-                          Data will appear here once available.
-                        </p>
-                      </div>
-                    </motion.div>
-                  </AnimatePresence>
+                  {emptyInner}
                 </td>
               </tr>
             ) : (
@@ -395,6 +399,27 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
+
+      {/* ── Mobile card list (shown below md when renderMobileCard is provided) ─ */}
+      {renderMobileCard && (
+        <div className="md:hidden">
+          {loading ? (
+            <div className="p-3 space-y-3" aria-hidden="true">
+              {Array.from({ length: skeletonRows }).map((_, i) => (
+                <Skeleton key={i} className="h-28 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : displayData.length === 0 ? (
+            <div className="px-4 py-16 text-center">{emptyInner}</div>
+          ) : (
+            <ul className="p-3 space-y-3">
+              {displayData.map((row) => (
+                <li key={getRowKey(row)}>{renderMobileCard(row)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

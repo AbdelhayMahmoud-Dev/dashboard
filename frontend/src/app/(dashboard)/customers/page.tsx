@@ -17,6 +17,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { MobileCard, MobileCardHeader, MobileCardField, MobileCardActions } from '@/components/ui/mobile-card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Pagination } from '@/components/ui/pagination';
 import { PageHeader } from '@/components/ui/page-header';
 import { CustomerStatusBadge } from '@/components/ui/status-badge';
@@ -260,6 +262,62 @@ export default function CustomersPage() {
           density={density}
           selection={{ selected, onChange: setSelected }}
           columnVisibility={{ hidden: hiddenCols, onChange: setHiddenCols }}
+          renderMobileCard={(c) => (
+            <MobileCard onClick={() => customerModal.open(c)}>
+              <MobileCardHeader>
+                <div className="flex items-start gap-3 min-w-0">
+                  <Checkbox
+                    checked={selected.has(c._id)}
+                    onCheckedChange={() => {
+                      const next = new Set(selected);
+                      if (next.has(c._id)) next.delete(c._id);
+                      else next.add(c._id);
+                      setSelected(next);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${c.name}`}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <Avatar className="w-9 h-9 shrink-0">
+                    <AvatarImage src={c.avatar} />
+                    <AvatarFallback className="text-xs font-bold bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                      {getInitials(c.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{c.name}</p>
+                    <p className="text-xs text-muted-foreground/70 truncate">{c.email}</p>
+                  </div>
+                </div>
+                <CustomerStatusBadge status={c.status} />
+              </MobileCardHeader>
+              <MobileCardField label="Orders">{formatNumber(c.totalOrders)}</MobileCardField>
+              <MobileCardField label="Spent">
+                <span className="font-semibold tabular">{formatCurrency(c.totalSpent)}</span>
+              </MobileCardField>
+              <MobileCardField label="Joined">
+                <span className="text-muted-foreground/70">{formatDate(c.createdAt)}</span>
+              </MobileCardField>
+              <MobileCardActions>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={(e) => { e.stopPropagation(); customerModal.open(c); }}
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={(e) => { e.stopPropagation(); setDeleteId(c._id); }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </Button>
+              </MobileCardActions>
+            </MobileCard>
+          )}
           toolbar={
             <>
               <SearchBar
