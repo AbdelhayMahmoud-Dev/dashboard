@@ -53,17 +53,6 @@ app.use(
 app.disable('x-powered-by');
 
 /**
- * CORS origin check.
- *
- * Production: strict allowlist driven by CLIENT_URL (comma-separated list).
- *
- * Development: allowlist PLUS any localhost / 127.0.0.1 / [::1] origin on any
- * port. Without this, browsers hitting the dev server via 127.0.0.1 instead of
- * localhost, or on a non-default port (when 3000 is taken), get their preflight
- * silently blocked — surfacing on the frontend as the generic "Cannot reach
- * the server" because axios never sees a response.
- */
-/**
  * Strip trailing slashes so "https://app.com/" and "https://app.com" compare
  * equal. A trailing slash in CLIENT_URL is the single most common reason a
  * correctly-configured origin still gets rejected — the browser's Origin header
@@ -73,27 +62,50 @@ function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+/** True for any localhost / loopback host (any port), used for local dev. */
+function isLocalhost(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]' ||
+    hostname === '::1'
+  );
+}
+
+/**
+ * CORS origin check. An origin is allowed when ANY of these hold:
+ *
+ *   1. It is in the CLIENT_URL allowlist (comma-separated, slash-insensitive).
+ *   2. It is a Vercel deployment — host ends in `.vercel.app`. This covers the
+ *      production alias AND every preview/branch deployment (which each get a
+ *      unique *.vercel.app URL), so the frontend keeps working without having to
+ *      re-list every new deployment URL in CLIENT_URL.
+ *   3. It is localhost / loopback on any port — local development.
+ *
+ * The origin callback returns `true` (not `'*'`), so the cors middleware
+ * REFLECTS the specific request origin back in Access-Control-Allow-Origin.
+ * That is what keeps `credentials: true` valid — the spec forbids `*` with
+ * credentials.
+ */
 function isAllowedOrigin(origin: string | undefined): boolean {
   // Same-origin and non-browser callers (curl, Postman, health probes) — allow.
   if (!origin) return true;
 
   const candidate = normalizeOrigin(origin);
+
+  // 1) Explicit allowlist.
   const allowed = env.CLIENT_URL.split(',').map(normalizeOrigin).filter(Boolean);
   if (allowed.includes(candidate)) return true;
 
-  if (!env.isProd) {
-    try {
-      const url = new URL(candidate);
-      const isLocalHost =
-        url.hostname === 'localhost' ||
-        url.hostname === '127.0.0.1' ||
-        url.hostname === '[::1]' ||
-        url.hostname === '::1';
-      if (isLocalHost) return true;
-    } catch {
-      // malformed origin — fall through to deny
-    }
+  // 2) & 3) Vercel deployments + localhost.
+  try {
+    const { hostname } = new URL(candidate);
+    if (hostname === 'vercel.app' || hostname.endsWith('.vercel.app')) return true;
+    if (isLocalhost(hostname)) return true;
+  } catch {
+    // malformed origin — fall through to deny
   }
+
   return false;
 }
 
