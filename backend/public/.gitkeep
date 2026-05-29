@@ -1,0 +1,16 @@
+# This file intentionally keeps an empty `public/` directory in git.
+#
+# Vercel deploys this backend as a serverless API (the Express app lives in
+# api/index.ts and is bundled by @vercel/node). Because the project has no
+# framework preset, Vercel still runs a build phase and then validates a static
+# "Output Directory" — defaulting to `public`. If that directory does not exist,
+# the deploy fails with:
+#
+#   Error: No Output Directory named "public" found after the Build completed.
+#
+# Committing this directory guarantees the Output Directory exists regardless of
+# whether the vercel.json buildCommand runs, so the check always passes. The
+# directory stays empty on purpose: the catch-all rewrite in vercel.json sends
+# every request to the api/ function, so nothing is ever served statically.
+#
+# Do not delete this file.

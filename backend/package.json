@@ -8,8 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "ts-node --transpile-only src/scripts/seed.ts",
-    "seed:fresh": "ts-node src/scripts/seed.ts --fresh",
-    "seed:large": "ts-node src/scripts/seed.ts --fresh --count=200"
+    "seed:reset": "ts-node --transpile-only src/scripts/seed.ts --fresh",
+    "seed:fresh": "ts-node --transpile-only src/scripts/seed.ts --fresh",
+    "seed:large": "ts-node --transpile-only src/scripts/seed.ts --fresh --orders=2000 --customers=500 --products=160"
   },
   "keywords": [],
   "author": "",
@@ -42,6 +43,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.4.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.8.1",
     "@types/cookie-parser": "^1.4.10",
@@ -56,6 +58,7 @@
     "@types/swagger-ui-express": "^4.1.8",
     "@types/uuid": "^10.0.0",
     "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^6.0.3"
   }

@@ -1,89 +1,159 @@
 /**
- * Database seed script — populates the DB with realistic development data.
+ * Database seed script — populates MongoDB with realistic, *coherent* business data
+ * so every dashboard page looks like a SaaS product actively used by hundreds of
+ * customers.
  *
  * Run:
- *   npx ts-node src/scripts/seed.ts           # add data (skips if already populated)
- *   npx ts-node src/scripts/seed.ts --fresh   # wipe first, then seed
- *   npx ts-node src/scripts/seed.ts --orders=300 --customers=120
+ *   npm run seed             # add data (skips collections that are already populated)
+ *   npm run seed:reset       # wipe everything first, then reseed from scratch
+ *   npm run seed:large       # reset + generate a much larger dataset
  *
- * Designed to produce SaaS metrics that feel like a real funded startup:
- *   - 6+ months of order history with a visible upward growth trend
- *   - Revenue in the $80k–$250k/month range (Series A stage)
- *   - Realistic customer LTV distribution (Pareto: 20% of customers = 80% of revenue)
- *   - Product catalog with plausible prices
+ *   # direct invocation with overrides:
+ *   npx ts-node --transpile-only src/scripts/seed.ts --fresh --orders=1500 --customers=400 --products=150
+ *
+ * Design goals (what makes the data believable):
+ *   - 100+ products, 300+ customers, 1000+ orders — all relationally valid.
+ *   - 13 months of order history with a clear month-over-month GROWTH trend.
+ *   - WEEKEND dips and Q4/holiday SEASONALITY baked into the order timeline.
+ *   - Pareto economics: ~20% of products are best-sellers driving ~80% of sales;
+ *     ~20% of customers (enterprise/VIP) drive most revenue.
+ *   - Best-sellers, slow-movers, low-stock and out-of-stock products all coexist.
+ *   - Product `totalSales` and customer `totalSpent`/`totalOrders` are DERIVED from
+ *     the orders actually generated, so widgets never contradict each other.
+ *   - A real admin account (admin@company.com / Admin123!) plus a small team.
+ *
+ * All fake names/emails/phones/addresses/descriptions come from @faker-js/faker.
  */
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
+import { faker } from '@faker-js/faker';
 import User from '../models/User';
 import Product from '../models/Product';
 import Customer from '../models/Customer';
 import Order from '../models/Order';
 import AuditLog from '../models/AuditLog';
 
+// Deterministic output across runs — stable screenshots / demos.
+faker.seed(20260529);
+
 // ── CLI args ──────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
-const FRESH       = args.includes('--fresh');
-const NUM_ORDERS  = parseInt(args.find(a => a.startsWith('--orders='))?.split('=')[1]   ?? '280');
-const NUM_CUSTOMERS = parseInt(args.find(a => a.startsWith('--customers='))?.split('=')[1] ?? '120');
+const FRESH         = args.includes('--fresh');
+const argNum = (name: string, fallback: number) =>
+  parseInt(args.find(a => a.startsWith(`--${name}=`))?.split('=')[1] ?? String(fallback), 10);
+
+const NUM_PRODUCTS  = argNum('products', 130);
+const NUM_CUSTOMERS = argNum('customers', 320);
+const NUM_ORDERS    = argNum('orders', 1100);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const pick = <T>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const randFloat = (min: number, max: number) => parseFloat((Math.random() * (max - min) + min).toFixed(2));
+const round2 = (n: number) => parseFloat(n.toFixed(2));
 
-/**
- * Random date biased toward the last N days (growth trend).
- * Most orders fall in the last 60 days; fewer in earlier months.
- * This ensures the 30-day revenue chart shows an upward trend.
- */
-function randomOrderDate(): Date {
-  const now = Date.now();
-  // Use a power distribution to weight toward recent dates
-  const randomFraction = Math.pow(Math.random(), 1.8); // exponent < 1 = recent bias
-  const maxDaysBack = 180;
-  const daysBack = Math.floor(randomFraction * maxDaysBack);
-  // Add intra-day randomness
-  const hoursBack = rand(0, 23);
-  const minutesBack = rand(0, 59);
-  return new Date(now - (daysBack * 86400 + hoursBack * 3600 + minutesBack * 60) * 1000);
+function weightedPick<T extends { weight: number }>(items: readonly T[]): T {
+  const total = items.reduce((s, i) => s + i.weight, 0);
+  let r = Math.random() * total;
+  for (const item of items) {
+    r -= item.weight;
+    if (r <= 0) return item;
+  }
+  return items[items.length - 1];
 }
 
 /**
- * Customer signup date over the last 12 months with recent bias — produces
- * the expected upward "customer growth" curve in analytics charts.
+ * Deterministic avatar URL — DiceBear avataaars (free, SVG, stable per seed).
  */
-function randomCustomerJoinedDate(): Date {
-  const randomFraction = Math.pow(Math.random(), 1.6);
-  const maxDaysBack = 365;
-  const daysBack = Math.floor(randomFraction * maxDaysBack);
-  return new Date(Date.now() - daysBack * 86400 * 1000 - rand(0, 86400 * 1000));
-}
-
-/**
- * Deterministic avatar URL — DiceBear avataaars (free, SVG, stable per name).
- * Identical name → identical avatar across runs, so testing screenshots stay stable.
- */
-function avatarFor(name: string): string {
-  const seed = encodeURIComponent(name.trim());
-  return `https://api.dicebear.com/9.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+function avatarFor(seed: string): string {
+  return `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
 }
 
 /**
  * Deterministic product thumbnail — Picsum with stable per-SKU seed.
- * Picsum was chosen over the deprecated Unsplash Source (shut down June 2024).
- * Photos are random; for production, swap to real product photography.
+ * (Unsplash Source was shut down June 2024, so Picsum is the stable free option.)
  */
 function thumbnailFor(sku: string): string {
   return `https://picsum.photos/seed/${encodeURIComponent(sku)}/400/400`;
 }
 
-// ── Product catalog ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// TIME MODEL — growth + weekend + seasonality
+// ──────────────────────────────────────────────────────────────────────────────
+const DAY_MS = 86_400_000;
+const NOW = new Date();
+
+/** Weekday multiplier — B2B/SaaS commerce dips on weekends. Index 0 = Sunday. */
+const WEEKDAY_FACTOR = [0.6, 1.05, 1.12, 1.12, 1.08, 1.0, 0.72];
+
+/** Seasonal multiplier by calendar month (0 = Jan). Holiday Q4 spike, summer/Jan dip. */
+const SEASONAL_FACTOR = [
+  0.80, // Jan — post-holiday slump
+  0.88, // Feb
+  0.98, // Mar
+  1.02, // Apr
+  1.05, // May
+  1.00, // Jun
+  0.92, // Jul — summer slowdown
+  0.95, // Aug
+  1.08, // Sep — back to business
+  1.12, // Oct
+  1.38, // Nov — Black Friday / Cyber Monday
+  1.52, // Dec — holiday peak
+];
+
+interface DayBucket { date: Date; weight: number }
+
+/**
+ * Build a weighted bucket per day for the trailing `horizonDays` (no future days).
+ * weight = growth(recencyMonths) × weekday × seasonal × noise.
+ * Growth makes recent months carry progressively more orders → upward MoM trend.
+ */
+function buildDayBuckets(horizonDays: number, monthlyGrowth: number): DayBucket[] {
+  const buckets: DayBucket[] = [];
+  for (let daysAgo = horizonDays - 1; daysAgo >= 0; daysAgo--) {
+    const date = new Date(NOW.getTime() - daysAgo * DAY_MS);
+    const monthsAgo = daysAgo / 30.4;
+    const growth = Math.pow(monthlyGrowth, -monthsAgo); // recent ≈ 1, oldest ≪ 1
+    const weekday = WEEKDAY_FACTOR[date.getDay()];
+    const seasonal = SEASONAL_FACTOR[date.getMonth()];
+    const noise = 0.85 + Math.random() * 0.3;
+    buckets.push({ date, weight: growth * weekday * seasonal * noise });
+  }
+  return buckets;
+}
+
+/** Cumulative-weight sampler over day buckets, with a random intra-day timestamp. */
+function makeDateSampler(buckets: DayBucket[]) {
+  const cum: number[] = [];
+  let acc = 0;
+  for (const b of buckets) { acc += b.weight; cum.push(acc); }
+  const total = acc;
+  return () => {
+    const r = Math.random() * total;
+    // binary search
+    let lo = 0, hi = cum.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < r) lo = mid + 1; else hi = mid;
+    }
+    const day = buckets[lo].date;
+    const ts = new Date(day);
+    // Cap "today" to the current time; spread other days over business-ish hours.
+    const isToday = day.toDateString() === NOW.toDateString();
+    const maxHour = isToday ? NOW.getHours() : 23;
+    ts.setHours(rand(7, Math.max(7, maxHour)), rand(0, 59), rand(0, 59), 0);
+    return ts;
+  };
+}
+
+// ── Curated premium product catalog (realistic flagship SKUs) ──────────────────
 const PRODUCT_CATALOG: Array<{
   name: string; category: string; price: number; comparePrice?: number; description: string;
 }> = [
-  // SaaS / Software Tools
+  // SaaS / Software
   { name: 'Professional Plan — Annual', category: 'Software', price: 299.00, comparePrice: 399.00, description: 'Full access to all Pro features with annual billing. Priority support included.' },
   { name: 'Team Plan — Annual', category: 'Software', price: 799.00, comparePrice: 999.00, description: 'Up to 10 seats with advanced collaboration features and admin dashboard.' },
   { name: 'Enterprise License', category: 'Software', price: 1999.00, description: 'Unlimited seats, SSO, dedicated account manager, SLA guarantee.' },
@@ -142,36 +212,44 @@ const PRODUCT_CATALOG: Array<{
   { name: 'Screen Cleaning Kit Pro', category: 'Accessories', price: 19.99, description: '150ml solution, microfiber cloth, safe for all screens.' },
 ];
 
-// ── Customer archetypes ───────────────────────────────────────────────────────
-// VIP customers spend 5-10x more — Pareto distribution
+const FAKER_CATEGORIES = [
+  'Electronics', 'Furniture', 'Clothing', 'Books', 'Sports',
+  'Home', 'Accessories', 'Beauty', 'Toys', 'Outdoors', 'Office', 'Kitchen',
+];
+
+/** Generate additional believable products with Faker to reach the target count. */
+function buildFakerProducts(count: number) {
+  return Array.from({ length: Math.max(0, count) }, () => {
+    const category = pick(FAKER_CATEGORIES);
+    const price = round2(parseFloat(faker.commerce.price({ min: 9, max: 899 })));
+    const hasCompare = Math.random() > 0.6;
+    const adjective = faker.commerce.productAdjective();
+    const material = faker.commerce.productMaterial();
+    const product = faker.commerce.product();
+    return {
+      name: `${adjective} ${material} ${product}`,
+      category,
+      price,
+      comparePrice: hasCompare ? round2(price * randFloat(1.12, 1.45)) : undefined,
+      description: faker.commerce.productDescription(),
+    };
+  });
+}
+
+// ── Customer archetypes (Pareto: a few accounts drive most revenue) ────────────
 const CUSTOMER_ARCHETYPES = [
-  { weight: 5,  tier: 'enterprise',    ordersPerYear: [12, 24], avgOrderValue: [800,  2500] },
-  { weight: 15, tier: 'vip',           ordersPerYear: [6,  12], avgOrderValue: [300,  900]  },
-  { weight: 30, tier: 'returning',     ordersPerYear: [3,  6],  avgOrderValue: [80,   300]  },
-  { weight: 50, tier: 'new',           ordersPerYear: [1,  3],  avgOrderValue: [40,   150]  },
+  { weight: 5,  tier: 'enterprise', ordersShare: 9, avgOrderValue: [800, 2500] },
+  { weight: 15, tier: 'vip',        ordersShare: 5, avgOrderValue: [300, 900]  },
+  { weight: 30, tier: 'returning',  ordersShare: 2.5, avgOrderValue: [80, 300] },
+  { weight: 50, tier: 'new',        ordersShare: 1, avgOrderValue: [40, 150]   },
 ] as const;
 
-const FIRST_NAMES = ['Liam','Emma','Noah','Olivia','Elijah','Ava','James','Sophia','Oliver','Isabella','William','Mia','Benjamin','Charlotte','Lucas','Amelia','Henry','Harper','Alexander','Evelyn','Mason','Abigail','Ethan','Emily','Daniel','Ella','Matthew','Scarlett','Aiden','Grace','Logan','Chloe','Jackson','Victoria','Sebastian','Riley','Jack','Aria','Owen','Lily'];
-const LAST_NAMES = ['Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Wilson','Martinez','Taylor','Anderson','Thomas','Lee','Walker','Harris','Lewis','Robinson','White','Young','Hall','Allen','King','Wright','Scott','Torres','Nguyen','Hill','Flores','Green','Adams','Nelson','Carter','Mitchell','Perez'];
-const DOMAINS = ['gmail.com', 'outlook.com', 'yahoo.com', 'icloud.com', 'protonmail.com', 'company.io', 'startup.co', 'enterprise.com'];
-const US_CITIES_STATES: [string, string][] = [
-  ['San Francisco','CA'],['New York','NY'],['Austin','TX'],['Seattle','WA'],['Boston','MA'],
-  ['Chicago','IL'],['Los Angeles','CA'],['Denver','CO'],['Atlanta','GA'],['Portland','OR'],
-  ['Nashville','TN'],['Miami','FL'],['Phoenix','AZ'],['Minneapolis','MN'],['Charlotte','NC'],
-  ['San Diego','CA'],['Dallas','TX'],['Houston','TX'],['Philadelphia','PA'],['Detroit','MI'],
-];
-const STREET_NAMES = ['Market','Mission','Castro','Valencia','Haight','Fillmore','Broadway','Grand','Oak','Maple','Cedar','Elm','Pine','Willow','Birch','Sunset','Sunrise','Highland','Lakeside','Riverside'];
+const DOMAINS = ['gmail.com', 'outlook.com', 'yahoo.com', 'icloud.com', 'proton.me', 'company.io', 'startup.co', 'acme.com'];
 
-// International distribution — ~60% US, with realistic spread across other markets.
-// Cities/regions are deliberately small lists (representative, not exhaustive) so
-// charts don't look like a population census.
-interface CountryEntry {
-  code:   string;
-  weight: number;
-  cities: [string, string][];
-}
+// International distribution — representative, not a census. ~60% US.
+interface CountryEntry { code: string; weight: number; cities: [string, string][] }
 const COUNTRIES: CountryEntry[] = [
-  { code: 'US', weight: 60, cities: US_CITIES_STATES },
+  { code: 'US', weight: 60, cities: [['San Francisco','CA'],['New York','NY'],['Austin','TX'],['Seattle','WA'],['Boston','MA'],['Chicago','IL'],['Los Angeles','CA'],['Denver','CO'],['Atlanta','GA'],['Portland','OR'],['Nashville','TN'],['Miami','FL'],['Phoenix','AZ'],['Minneapolis','MN'],['Charlotte','NC'],['San Diego','CA'],['Dallas','TX'],['Houston','TX'],['Philadelphia','PA'],['Detroit','MI']] },
   { code: 'GB', weight: 8,  cities: [['London','England'],['Manchester','England'],['Edinburgh','Scotland'],['Bristol','England']] },
   { code: 'CA', weight: 7,  cities: [['Toronto','ON'],['Vancouver','BC'],['Montreal','QC'],['Calgary','AB']] },
   { code: 'AU', weight: 5,  cities: [['Sydney','NSW'],['Melbourne','VIC'],['Brisbane','QLD']] },
@@ -194,24 +272,16 @@ const ORDER_STATUS_WEIGHTS = [
 
 const PAYMENT_METHODS = ['credit_card','credit_card','credit_card','paypal','stripe','stripe','bank_transfer'] as const;
 
-function weightedPick<T extends { weight: number }>(items: readonly T[]): T {
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  let r = Math.random() * total;
-  for (const item of items) {
-    r -= item.weight;
-    if (r <= 0) return item;
-  }
-  return items[items.length - 1];
-}
-
-// ── Main seed function ────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// MAIN
+// ──────────────────────────────────────────────────────────────────────────────
 async function seed() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI not set in .env');
 
   console.log('🔗 Connecting to MongoDB...');
   await mongoose.connect(uri);
-  console.log('✅ Connected\n');
+  console.log(`✅ Connected to ${mongoose.connection.host}\n`);
 
   if (FRESH) {
     console.log('🗑️  Wiping collections...');
@@ -225,49 +295,66 @@ async function seed() {
     console.log('✅ Collections wiped\n');
   }
 
-  // ── 1. Users ───────────────────────────────────────────────────────────────
+  // ── 1. Users / team ──────────────────────────────────────────────────────────
   console.log('👤 Seeding users...');
-  const passwordHash = await bcrypt.hash('Admin@1234', 12);
+  // Hash once and reuse. The User pre-validate hook only re-hashes when `password`
+  // is modified; on upsert we pass an already-hashed value and it is stored as-is.
+  const adminHash = await bcrypt.hash('Admin123!', 12);
+  const teamHash  = await bcrypt.hash('Admin@1234', 12);
 
+  // Primary required admin — created only if it doesn't already exist (no duplicates).
   const adminUser = await User.findOneAndUpdate(
-    { email: 'admin@example.com' },
+    { email: 'admin@company.com' },
     {
-      name: 'Alex Chen',
-      email: 'admin@example.com',
-      password: passwordHash,
-      role: 'super_admin',
-      isActive: true,
-      permissions: ['manage:users','manage:products','manage:orders','manage:customers','view:analytics'],
-      lastLogin: new Date(),
+      $setOnInsert: {
+        name: 'Admin User',
+        email: 'admin@company.com',
+        password: adminHash,
+        role: 'super_admin',
+        isActive: true,
+        avatar: avatarFor('Admin User'),
+        permissions: ['manage:users','manage:products','manage:orders','manage:customers','view:analytics'],
+        lastLogin: new Date(),
+      },
     },
     { upsert: true, new: true }
   );
-  await User.findOneAndUpdate(
-    { email: 'manager@example.com' },
-    { name: 'Sarah Kim', email: 'manager@example.com', password: passwordHash, role: 'manager', isActive: true, permissions: ['manage:products','manage:orders','view:analytics'] },
-    { upsert: true, new: true }
-  );
-  await User.findOneAndUpdate(
-    { email: 'viewer@example.com' },
-    { name: 'Marcus Rodriguez', email: 'viewer@example.com', password: passwordHash, role: 'viewer', isActive: true, permissions: [] },
-    { upsert: true, new: true }
-  );
 
-  console.log('   admin@example.com   / Admin@1234  (super_admin)');
-  console.log('   manager@example.com / Admin@1234  (manager)');
-  console.log('   viewer@example.com  / Admin@1234  (viewer)\n');
+  // A small, realistic team alongside the admin.
+  const team: Array<{ name: string; email: string; role: 'manager' | 'viewer'; permissions: string[] }> = [
+    { name: 'Sarah Kim',        email: 'manager@company.com', role: 'manager', permissions: ['manage:products','manage:orders','view:analytics'] },
+    { name: 'Marcus Rodriguez', email: 'viewer@company.com',  role: 'viewer',  permissions: [] },
+  ];
+  for (const t of team) {
+    await User.findOneAndUpdate(
+      { email: t.email },
+      { $setOnInsert: { ...t, password: teamHash, isActive: true, avatar: avatarFor(t.name) } },
+      { upsert: true, new: true }
+    );
+  }
+  console.log('   admin@company.com   / Admin123!   (super_admin)');
+  console.log('   manager@company.com / Admin@1234  (manager)');
+  console.log('   viewer@company.com  / Admin@1234  (viewer)\n');
+
+  // Product creation timeline — products predate the orders that reference them.
+  const productDateSampler = makeDateSampler(buildDayBuckets(540, 1.0));
 
   // ── 2. Products ────────────────────────────────────────────────────────────
   console.log('📦 Seeding products...');
   const existingProductCount = await Product.countDocuments();
-  let products: Awaited<ReturnType<typeof Product.find>>;
+  let products: Array<InstanceType<typeof Product>>;
 
-  if (existingProductCount >= PRODUCT_CATALOG.length) {
+  if (existingProductCount >= NUM_PRODUCTS) {
     products = await Product.find();
     console.log(`   Skipping — ${existingProductCount} products already exist`);
   } else {
-    const productDocs = PRODUCT_CATALOG.map((p) => {
+    const catalog = [...PRODUCT_CATALOG, ...buildFakerProducts(NUM_PRODUCTS - PRODUCT_CATALOG.length)];
+
+    const productDocs = catalog.map((p, idx) => {
       const sku = `SKU-${randomUUID().slice(0, 8).toUpperCase()}`;
+      // ~20% of catalog are "hot" best-sellers (Pareto). Tracked separately below.
+      const status = pick(['active','active','active','active','active','active','active','active','inactive','draft']) as 'active' | 'inactive' | 'draft';
+      const createdAt = productDateSampler();
       return {
         name: p.name,
         description: p.description,
@@ -276,137 +363,148 @@ async function seed() {
         category: p.category,
         subcategory: p.category,
         sku,
-        stock: rand(5, 500),
+        // Real stock is recomputed after orders are generated (see step 4 backfill).
+        stock: rand(20, 400),
         images: [thumbnailFor(sku)],
         thumbnail: thumbnailFor(sku),
-        tags: [p.category.toLowerCase().replace(/ /g, '-'), 'featured'],
-        status: pick(['active','active','active','active','inactive','draft']) as 'active' | 'inactive' | 'draft',
-        isFeatured: Math.random() > 0.75,
-        totalSales: rand(10, 2500),
-        rating: randFloat(3.8, 5.0),
-        reviewCount: rand(5, 800),
+        tags: [p.category.toLowerCase().replace(/ /g, '-'), idx % 5 === 0 ? 'featured' : 'catalog'],
+        status,
+        isFeatured: false,
+        totalSales: 0,
+        rating: randFloat(3.6, 5.0),
+        reviewCount: rand(0, 50),
         createdBy: adminUser._id,
+        createdAt,
+        updatedAt: createdAt,
       };
     });
-    products = await Product.insertMany(productDocs) as Awaited<ReturnType<typeof Product.find>>;
+    products = await Product.insertMany(productDocs) as Array<InstanceType<typeof Product>>;
     console.log(`   Created ${products.length} products`);
-  }
-
-  // Backfill thumbnails on any products missing them (idempotent — non-destructive).
-  const productsMissingThumb = await Product.find({
-    $or: [{ thumbnail: '' }, { thumbnail: null }, { thumbnail: { $exists: false } }],
-  }).select('_id sku');
-  if (productsMissingThumb.length > 0) {
-    const bulk = productsMissingThumb.map((p) => ({
-      updateOne: {
-        filter: { _id: p._id },
-        update: { $set: { thumbnail: thumbnailFor(p.sku), images: [thumbnailFor(p.sku)] } },
-      },
-    }));
-    await Product.bulkWrite(bulk);
-    console.log(`   Backfilled thumbnails on ${productsMissingThumb.length} products`);
-    // Refresh `products` so downstream order-seeding sees the thumbnails.
-    products = await Product.find() as Awaited<ReturnType<typeof Product.find>>;
   }
   console.log('');
 
   // ── 3. Customers ───────────────────────────────────────────────────────────
   console.log('🙋 Seeding customers...');
   const existingCustomerCount = await Customer.countDocuments();
-  let customers: Awaited<ReturnType<typeof Customer.find>>;
+  let customers: Array<InstanceType<typeof Customer>>;
+
+  // Customer signups skew recent (growth) — drives the "new customers" curve.
+  const customerDateSampler = makeDateSampler(buildDayBuckets(365, 1.16));
 
   if (existingCustomerCount >= NUM_CUSTOMERS) {
     customers = await Customer.find();
     console.log(`   Skipping — ${existingCustomerCount} customers already exist`);
   } else {
+    const seenEmails = new Set<string>();
     const customerDocs = Array.from({ length: NUM_CUSTOMERS }, (_, i) => {
-      const first = pick(FIRST_NAMES);
-      const last  = pick(LAST_NAMES);
+      const first = faker.person.firstName();
+      const last  = faker.person.lastName();
       const fullName = `${first} ${last}`;
       const country = weightedPick(COUNTRIES);
       const [city, state] = pick(country.cities);
       const archetype = weightedPick(CUSTOMER_ARCHETYPES);
-      const createdAt = randomCustomerJoinedDate();
+      const createdAt = customerDateSampler();
+
+      // Guaranteed-unique email derived from the name.
+      let email = `${first}.${last}`.toLowerCase().replace(/[^a-z.]/g, '') + `@${pick(DOMAINS)}`;
+      if (seenEmails.has(email)) email = `${first}.${last}${i}`.toLowerCase().replace(/[^a-z0-9.]/g, '') + `@${pick(DOMAINS)}`;
+      seenEmails.add(email);
 
       return {
         name:  fullName,
-        email: `${first.toLowerCase()}.${last.toLowerCase()}${i > 0 ? i : ''}@${pick(DOMAINS)}`,
-        phone: `+1 ${rand(200, 999)}-${rand(200, 999)}-${rand(1000, 9999)}`,
+        email,
+        phone: faker.phone.number({ style: 'national' }),
         avatar: avatarFor(fullName + i),
-        status: archetype.tier === 'enterprise' || archetype.tier === 'vip'
+        status: (archetype.tier === 'enterprise' || archetype.tier === 'vip')
           ? 'active' as const
-          : pick(['active','active','active','inactive','banned']) as 'active' | 'inactive' | 'banned',
+          : pick(['active','active','active','active','inactive','banned']) as 'active' | 'inactive' | 'banned',
         tags: [archetype.tier === 'enterprise' ? 'vip' : archetype.tier],
         totalOrders: 0,
         totalSpent: 0,
         address: {
-          street:  `${rand(1, 9999)} ${pick(STREET_NAMES)} ${pick(['St','Ave','Blvd','Ct','Dr','Way'])}`,
+          street:  faker.location.streetAddress(),
           city,
           state,
           country: country.code,
-          zipCode: `${rand(10000, 99999)}`,
+          zipCode: faker.location.zipCode(),
         },
-        // Spread signups across the last 12 months for a believable growth curve.
         createdAt,
         updatedAt: createdAt,
       };
     });
-    customers = await Customer.insertMany(customerDocs) as Awaited<ReturnType<typeof Customer.find>>;
+    customers = await Customer.insertMany(customerDocs) as Array<InstanceType<typeof Customer>>;
     console.log(`   Created ${customers.length} customers`);
-  }
-
-  // Backfill avatars on any customers missing them (idempotent — non-destructive).
-  const customersMissingAvatar = await Customer.find({
-    $or: [{ avatar: null }, { avatar: '' }, { avatar: { $exists: false } }],
-  }).select('_id name');
-  if (customersMissingAvatar.length > 0) {
-    const bulk = customersMissingAvatar.map((c) => ({
-      updateOne: {
-        filter: { _id: c._id },
-        update: { $set: { avatar: avatarFor(c.name) } },
-      },
-    }));
-    await Customer.bulkWrite(bulk);
-    console.log(`   Backfilled avatars on ${customersMissingAvatar.length} customers`);
-    customers = await Customer.find() as Awaited<ReturnType<typeof Customer.find>>;
   }
   console.log('');
 
   // ── 4. Orders ──────────────────────────────────────────────────────────────
-  console.log('🛒 Seeding orders...');
+  console.log('🛒 Seeding orders (growth + weekend + seasonality)...');
   const existingOrderCount = await Order.countDocuments();
 
   if (existingOrderCount >= NUM_ORDERS) {
     console.log(`   Skipping — ${existingOrderCount} orders already exist\n`);
   } else {
-    const activeProducts = products.filter((p) => p.status === 'active' || !p.status);
-    const allProducts = activeProducts.length > 0 ? activeProducts : products;
+    // Only sell products that are actually purchasable.
+    const sellable = products.filter((p) => p.status === 'active');
+    const catalogForSale = sellable.length > 0 ? sellable : products;
+
+    // Pareto product popularity: ~20% are best-sellers (high weight), the rest are
+    // long-tail / slow-movers. This yields a realistic top-products distribution.
+    const productPool = catalogForSale.map((p) => ({
+      product: p,
+      weight: Math.random() < 0.2 ? rand(8, 20) : randFloat(0.4, 2.5),
+    }));
+
+    // Customer purchase frequency follows their archetype's ordersShare.
+    const customerPool = customers.map((c) => {
+      const tier = (c.tags?.[0] ?? 'new');
+      const archetype = CUSTOMER_ARCHETYPES.find(a =>
+        (a.tier === 'enterprise' && tier === 'vip' && Math.random() < 0.25) || a.tier === tier
+      ) ?? CUSTOMER_ARCHETYPES[3];
+      return { customer: c, weight: archetype.ordersShare * randFloat(0.6, 1.6) };
+    });
+
+    const orderDateSampler = makeDateSampler(buildDayBuckets(395, 1.12));
 
     const orderDocs = Array.from({ length: NUM_ORDERS }, () => {
-      const customer = pick(customers as InstanceType<typeof Customer>[]);
+      const customer = weightedPick(customerPool).customer;
       const statusEntry = weightedPick(ORDER_STATUS_WEIGHTS);
       const status = statusEntry.status;
 
-      const numItems = rand(1, 4);
+      const numItems = weightedPick([
+        { value: 1, weight: 45 }, { value: 2, weight: 28 },
+        { value: 3, weight: 16 }, { value: 4, weight: 8 }, { value: 5, weight: 3 },
+      ] as const).value;
+
+      const usedProductIds = new Set<string>();
       const items = Array.from({ length: numItems }, () => {
-        const product = pick(allProducts as InstanceType<typeof Product>[]);
-        const quantity = rand(1, 5);
+        let product = weightedPick(productPool).product;
+        // Avoid duplicate line items in one order.
+        let guard = 0;
+        while (usedProductIds.has(product._id.toString()) && guard++ < 5) {
+          product = weightedPick(productPool).product;
+        }
+        usedProductIds.add(product._id.toString());
+        const quantity = weightedPick([
+          { value: 1, weight: 55 }, { value: 2, weight: 25 },
+          { value: 3, weight: 12 }, { value: 4, weight: 5 }, { value: 5, weight: 3 },
+        ] as const).value;
         return {
           product:   product._id,
           name:      product.name,
           thumbnail: product.thumbnail ?? '',
           price:     product.price,
           quantity,
-          subtotal:  parseFloat((product.price * quantity).toFixed(2)),
+          subtotal:  round2(product.price * quantity),
         };
       });
 
-      const subtotal  = parseFloat(items.reduce((s, i) => s + i.subtotal, 0).toFixed(2));
-      const tax       = parseFloat((subtotal * 0.08).toFixed(2));
+      const subtotal  = round2(items.reduce((s, i) => s + i.subtotal, 0));
+      const tax       = round2(subtotal * 0.08);
       const shipping  = subtotal > 150 ? 0 : subtotal > 75 ? 7.99 : 12.99;
-      const discount  = Math.random() > 0.75 ? parseFloat((subtotal * randFloat(0.05, 0.2)).toFixed(2)) : 0;
-      const total     = parseFloat((subtotal + tax + shipping - discount).toFixed(2));
-      const createdAt = randomOrderDate();
+      const discount  = Math.random() > 0.75 ? round2(subtotal * randFloat(0.05, 0.2)) : 0;
+      const total     = round2(subtotal + tax + shipping - discount);
+      const createdAt = orderDateSampler();
 
       const paymentStatus =
         status === 'delivered' ? 'paid' :
@@ -414,32 +512,24 @@ async function seed() {
         status === 'shipped'   ? pick(['paid','paid','paid','pending'] as const) :
         pick(['paid','paid','pending'] as const);
 
-      // Build a realistic status history timeline
+      // Realistic status timeline.
       const history: Array<{ status: string; timestamp: Date; note?: string }> = [
         { status: 'pending', timestamp: createdAt },
       ];
-      if (['processing','shipped','delivered'].includes(status)) {
+      if (['processing','shipped','delivered'].includes(status))
         history.push({ status: 'processing', timestamp: new Date(createdAt.getTime() + rand(1,4) * 3600000) });
-      }
-      if (['shipped','delivered'].includes(status)) {
+      if (['shipped','delivered'].includes(status))
         history.push({ status: 'shipped', timestamp: new Date(createdAt.getTime() + rand(12,48) * 3600000), note: `Tracking: ${randomUUID().slice(0,12).toUpperCase()}` });
-      }
-      if (status === 'delivered') {
+      if (status === 'delivered')
         history.push({ status: 'delivered', timestamp: new Date(createdAt.getTime() + rand(48,144) * 3600000) });
-      }
-      if (status === 'cancelled') {
+      if (status === 'cancelled')
         history.push({ status: 'cancelled', timestamp: new Date(createdAt.getTime() + rand(1,24) * 3600000), note: 'Cancelled by customer' });
-      }
 
       return {
         orderNumber: `ORD-${randomUUID().slice(0, 8).toUpperCase()}`,
         customer:    customer._id,
         items,
-        subtotal,
-        tax,
-        shipping,
-        discount,
-        total,
+        subtotal, tax, shipping, discount, total,
         status,
         paymentStatus,
         paymentMethod: pick(PAYMENT_METHODS),
@@ -448,65 +538,90 @@ async function seed() {
           address:  customer.address?.street  ?? '123 Main St',
           city:     customer.address?.city    ?? 'San Francisco',
           state:    customer.address?.state   ?? 'CA',
-          country:  'US',
+          country:  customer.address?.country ?? 'US',
           zipCode:  customer.address?.zipCode ?? '94105',
           phone:    customer.phone            ?? '+1 555-0000',
         },
         statusHistory: history,
-        notes: Math.random() > 0.8 ? pick(['Gift — please include card','No signature required','Leave at door','Fragile contents']) : undefined,
+        notes: Math.random() > 0.85 ? pick(['Gift — please include card','No signature required','Leave at door','Fragile contents']) : undefined,
         createdAt,
         updatedAt: history[history.length - 1].timestamp,
       };
     });
 
     await Order.insertMany(orderDocs);
+    console.log(`   Created ${orderDocs.length} orders`);
 
-    // Back-fill customer stats from actual orders
-    console.log('   Updating customer statistics...');
-    const allOrders = await Order.find().select('customer total paymentStatus');
-    const statsMap = new Map<string, { orders: number; spent: number }>();
+    // ── Derive customer stats from real orders ─────────────────────────────────
+    console.log('   Deriving customer statistics from orders...');
+    const allOrders = await Order.find().select('customer total paymentStatus items');
+    const custStats = new Map<string, { orders: number; spent: number }>();
+    const prodUnits = new Map<string, number>();
 
     for (const order of allOrders) {
       const key = order.customer.toString();
-      const entry = statsMap.get(key) ?? { orders: 0, spent: 0 };
+      const entry = custStats.get(key) ?? { orders: 0, spent: 0 };
       entry.orders += 1;
       if (order.paymentStatus === 'paid') entry.spent += order.total;
-      statsMap.set(key, entry);
+      custStats.set(key, entry);
+
+      for (const it of order.items) {
+        const pid = it.product.toString();
+        prodUnits.set(pid, (prodUnits.get(pid) ?? 0) + it.quantity);
+      }
     }
 
-    const bulkOps = [...statsMap.entries()].map(([id, { orders, spent }]) => ({
-      updateOne: {
-        filter: { _id: id },
-        update: { $set: { totalOrders: orders, totalSpent: parseFloat(spent.toFixed(2)) } },
-      },
+    const custBulk = [...custStats.entries()].map(([id, { orders, spent }]) => ({
+      updateOne: { filter: { _id: id }, update: { $set: { totalOrders: orders, totalSpent: round2(spent) } } },
     }));
-    if (bulkOps.length > 0) await Customer.bulkWrite(bulkOps);
+    if (custBulk.length > 0) await Customer.bulkWrite(custBulk);
 
-    console.log(`   Created ${orderDocs.length} orders\n`);
+    // ── Derive product totalSales + realistic stock from real orders ───────────
+    console.log('   Deriving product sales + stock levels from orders...');
+    const allProductsForStock = await Product.find().select('_id');
+    const prodBulk = allProductsForStock.map((p) => {
+      const sold = prodUnits.get(p._id.toString()) ?? 0;
+      // Stock realism: a few out-of-stock, some low-stock, rest healthy.
+      const roll = Math.random();
+      const stock =
+        roll < 0.08 ? 0 :                 // 8% out of stock
+        roll < 0.20 ? rand(1, 9) :        // 12% low stock (triggers low-stock alerts)
+        rand(15, 600);                    // healthy
+      return {
+        updateOne: {
+          filter: { _id: p._id },
+          update: { $set: {
+            totalSales: sold,
+            stock,
+            // Best-sellers (top of the long tail) get flagged as featured.
+            isFeatured: sold > 60,
+          } },
+        },
+      };
+    });
+    if (prodBulk.length > 0) await Product.bulkWrite(prodBulk);
+
+    console.log('   ✅ Stats derived\n');
   }
 
-  // ── 5. Audit log ───────────────────────────────────────────────────────────
+  // ── 5. Audit log ─────────────────────────────────────────────────────────────
   console.log('📋 Seeding audit log...');
   const existingAuditCount = await AuditLog.countDocuments();
-  const TARGET_AUDIT_COUNT = 80;
+  const TARGET_AUDIT_COUNT = 90;
 
   if (existingAuditCount >= TARGET_AUDIT_COUNT) {
     console.log(`   Skipping — ${existingAuditCount} audit entries already exist\n`);
   } else {
-    const auditableUsers = await User.find({
-      role: { $in: ['super_admin', 'manager'] },
-    }).select('_id role');
+    const auditableUsers = await User.find({ role: { $in: ['super_admin', 'admin', 'manager'] } }).select('_id role');
 
     const sampleOrders = await Order.aggregate([
-      { $sample: { size: 30 } },
+      { $sample: { size: 35 } },
       { $project: { _id: 1, orderNumber: 1, status: 1, total: 1 } },
     ]) as Array<{ _id: mongoose.Types.ObjectId; orderNumber: string; status: string; total: number }>;
-
     const sampleProducts = await Product.aggregate([
-      { $sample: { size: 20 } },
+      { $sample: { size: 25 } },
       { $project: { _id: 1, name: 1, price: 1, stock: 1 } },
     ]) as Array<{ _id: mongoose.Types.ObjectId; name: string; price: number; stock: number }>;
-
     const sampleCustomers = await Customer.aggregate([
       { $sample: { size: 15 } },
       { $project: { _id: 1, name: 1, email: 1 } },
@@ -519,108 +634,54 @@ async function seed() {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
     ];
     const ipFor = () => `${rand(10, 220)}.${rand(0, 255)}.${rand(0, 255)}.${rand(1, 254)}`;
-
-    function auditDate(): Date {
-      // Power distribution recent bias over the last 60 days.
+    const auditDate = () => {
       const f = Math.pow(Math.random(), 1.5);
-      const daysBack = Math.floor(f * 60);
-      const secondsBack = daysBack * 86400 + rand(0, 86400);
-      return new Date(Date.now() - secondsBack * 1000);
-    }
-
-    type Entry = {
-      user:       mongoose.Types.ObjectId;
-      action:     string;
-      resource:   string;
-      resourceId?: string;
-      details?:   Record<string, unknown>;
-      ipAddress:  string;
-      userAgent:  string;
-      createdAt:  Date;
+      return new Date(Date.now() - (Math.floor(f * 60) * 86400 + rand(0, 86400)) * 1000);
     };
 
+    type Entry = {
+      user: mongoose.Types.ObjectId; action: string; resource: string;
+      resourceId?: string; details?: Record<string, unknown>;
+      ipAddress: string; userAgent: string; createdAt: Date;
+    };
     const entries: Entry[] = [];
 
-    // Order events — status changes and refunds
     for (const o of sampleOrders) {
       const actor = pick(auditableUsers);
-      const action = pick([
-        'order.status_changed',
-        'order.status_changed',
-        'order.status_changed',
-        'order.refunded',
-        'order.notes_updated',
-      ]);
+      const action = pick(['order.status_changed','order.status_changed','order.status_changed','order.refunded','order.notes_updated']);
       entries.push({
-        user:       actor._id,
-        action,
-        resource:   'order',
-        resourceId: o._id.toString(),
+        user: actor._id, action, resource: 'order', resourceId: o._id.toString(),
         details: action === 'order.status_changed'
           ? { orderNumber: o.orderNumber, from: pick(['pending','processing','shipped']), to: o.status }
-          : action === 'order.refunded'
-            ? { orderNumber: o.orderNumber, amount: o.total }
-            : { orderNumber: o.orderNumber },
-        ipAddress:  ipFor(),
-        userAgent:  pick(USER_AGENTS),
-        createdAt:  auditDate(),
+          : action === 'order.refunded' ? { orderNumber: o.orderNumber, amount: o.total } : { orderNumber: o.orderNumber },
+        ipAddress: ipFor(), userAgent: pick(USER_AGENTS), createdAt: auditDate(),
       });
     }
-
-    // Product events — price/stock/status updates
     for (const p of sampleProducts) {
       const actor = pick(auditableUsers);
-      const action = pick([
-        'product.updated',
-        'product.updated',
-        'product.price_changed',
-        'product.stock_adjusted',
-        'product.status_changed',
-      ]);
+      const action = pick(['product.updated','product.updated','product.price_changed','product.stock_adjusted','product.status_changed']);
       entries.push({
-        user:       actor._id,
-        action,
-        resource:   'product',
-        resourceId: p._id.toString(),
-        details: action === 'product.price_changed'
-          ? { name: p.name, from: p.price + randFloat(5, 25), to: p.price }
-          : action === 'product.stock_adjusted'
-            ? { name: p.name, delta: rand(-50, 100), newStock: p.stock }
-            : action === 'product.status_changed'
-              ? { name: p.name, to: pick(['active','inactive','draft']) }
-              : { name: p.name, fields: pick([['description'],['tags'],['comparePrice'],['rating']]) },
-        ipAddress:  ipFor(),
-        userAgent:  pick(USER_AGENTS),
-        createdAt:  auditDate(),
+        user: actor._id, action, resource: 'product', resourceId: p._id.toString(),
+        details: action === 'product.price_changed' ? { name: p.name, from: round2(p.price + randFloat(5, 25)), to: p.price }
+          : action === 'product.stock_adjusted' ? { name: p.name, delta: rand(-50, 100), newStock: p.stock }
+          : action === 'product.status_changed' ? { name: p.name, to: pick(['active','inactive','draft']) }
+          : { name: p.name, fields: pick([['description'],['tags'],['comparePrice'],['rating']]) },
+        ipAddress: ipFor(), userAgent: pick(USER_AGENTS), createdAt: auditDate(),
       });
     }
-
-    // Customer events
     for (const c of sampleCustomers) {
       const actor = pick(auditableUsers);
       entries.push({
-        user:       actor._id,
-        action:     pick(['customer.updated','customer.tag_added','customer.note_added','customer.status_changed']),
-        resource:   'customer',
-        resourceId: c._id.toString(),
-        details:    { name: c.name, email: c.email },
-        ipAddress:  ipFor(),
-        userAgent:  pick(USER_AGENTS),
-        createdAt:  auditDate(),
+        user: actor._id, action: pick(['customer.updated','customer.tag_added','customer.note_added','customer.status_changed']),
+        resource: 'customer', resourceId: c._id.toString(), details: { name: c.name, email: c.email },
+        ipAddress: ipFor(), userAgent: pick(USER_AGENTS), createdAt: auditDate(),
       });
     }
-
-    // Auth events — admin/manager logins
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 18; i++) {
       const actor = pick(auditableUsers);
       entries.push({
-        user:      actor._id,
-        action:    'auth.login',
-        resource:  'session',
-        details:   { method: 'password' },
-        ipAddress: ipFor(),
-        userAgent: pick(USER_AGENTS),
-        createdAt: auditDate(),
+        user: actor._id, action: 'auth.login', resource: 'session', details: { method: 'password' },
+        ipAddress: ipFor(), userAgent: pick(USER_AGENTS), createdAt: auditDate(),
       });
     }
 
@@ -628,24 +689,29 @@ async function seed() {
     console.log(`   Created ${entries.length} audit log entries\n`);
   }
 
-  // ── 6. Summary ─────────────────────────────────────────────────────────────
-  const [pCount, cCount, oCount, uCount, aCount] = await Promise.all([
+  // ── 6. Summary ───────────────────────────────────────────────────────────────
+  const [pCount, cCount, oCount, uCount, aCount, activeProducts, outOfStock, lowStock, paidAgg] = await Promise.all([
     Product.countDocuments(),
     Customer.countDocuments(),
     Order.countDocuments(),
     User.countDocuments(),
     AuditLog.countDocuments(),
+    Product.countDocuments({ status: 'active' }),
+    Product.countDocuments({ stock: 0 }),
+    Product.countDocuments({ stock: { $gt: 0, $lte: 9 } }),
+    Order.aggregate([{ $match: { paymentStatus: 'paid' } }, { $group: { _id: null, total: { $sum: '$total' } } }]),
   ]);
 
   console.log('✅ Seed complete!\n');
   console.log('   Collection   Count');
   console.log('   ──────────── ─────');
-  console.log(`   Products     ${pCount}`);
+  console.log(`   Products     ${pCount}  (active ${activeProducts}, out-of-stock ${outOfStock}, low-stock ${lowStock})`);
   console.log(`   Customers    ${cCount}`);
   console.log(`   Orders       ${oCount}`);
   console.log(`   Users        ${uCount}`);
   console.log(`   Audit log    ${aCount}`);
-  console.log('\n   Login: admin@example.com / Admin@1234\n');
+  console.log(`   Paid revenue $${Math.round(paidAgg[0]?.total ?? 0).toLocaleString('en-US')}`);
+  console.log('\n   Login: admin@company.com / Admin123!\n');
 
   await mongoose.disconnect();
 }
