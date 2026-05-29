@@ -1,6 +1,6 @@
 import Product from '../models/Product';
 import { ApiError } from '../utils/ApiError';
-import cloudinary from '../config/cloudinary';
+import cloudinary, { uploadBufferToCloudinary } from '../config/cloudinary';
 import { logger } from '../utils/logger';
 
 export interface ProductFilters {
@@ -87,9 +87,11 @@ export class ProductService {
   async uploadImages(files: Express.Multer.File[]) {
     if (!files.length) throw ApiError.fromCode('UPLOAD_NO_FILES');
 
+    // Serverless-safe: upload the in-memory buffer (multer.memoryStorage) via
+    // Cloudinary's upload_stream — no `f.path` / local temp file involved.
     const results = await Promise.allSettled(
       files.map((f) =>
-        cloudinary.uploader.upload(f.path, {
+        uploadBufferToCloudinary(f.buffer, {
           folder: 'products',
           quality: 'auto:good',
           fetch_format: 'auto',

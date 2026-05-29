@@ -128,8 +128,10 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
-// Static files
-app.use('/uploads', express.static('uploads'));
+// NOTE: No local static `/uploads` mount. All user uploads go straight to
+// Cloudinary (see config/cloudinary.ts → uploadBufferToCloudinary). Serverless
+// hosts (Vercel) have a read-only filesystem, so there is nothing to serve from
+// disk and nothing is ever written locally.
 
 // Health (unversioned — consumed by load balancers & Docker)
 app.use('/health', healthRoutes);

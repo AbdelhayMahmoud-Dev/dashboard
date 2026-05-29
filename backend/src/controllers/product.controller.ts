@@ -3,7 +3,7 @@ import Product from '../models/Product';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
-import cloudinary from '../config/cloudinary';
+import cloudinary, { uploadBufferToCloudinary } from '../config/cloudinary';
 
 export const getProducts = asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -92,8 +92,10 @@ export const uploadProductImages = asyncHandler(async (req: Request, res: Respon
   const files = req.files as Express.Multer.File[];
   if (!files || files.length === 0) throw new ApiError(400, 'No files uploaded');
 
+  // Serverless-safe: stream each in-memory buffer (from multer.memoryStorage)
+  // straight to Cloudinary. No `file.path` / local temp file involved.
   const uploadPromises = files.map((file) =>
-    cloudinary.uploader.upload(file.path, { folder: 'products', quality: 'auto' })
+    uploadBufferToCloudinary(file.buffer, { folder: 'products', quality: 'auto' })
   );
   const results = await Promise.all(uploadPromises);
   const urls = results.map((r) => r.secure_url);

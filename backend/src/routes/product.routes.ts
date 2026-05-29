@@ -24,9 +24,9 @@ import { ApiError } from '../utils/ApiError';
  *   - 5 MB per file, max 10 files per request → bounded DoS surface
  *   - Whitelist on MIME type AND filename extension → defence in depth against
  *     spoofed Content-Type headers
- *   - Files land in uploads/tmp/ and are expected to be moved/uploaded to
- *     Cloudinary (or deleted) by the controller — they are NEVER served from
- *     this directory.
+ *   - Uses multer.memoryStorage() → each file is held in RAM as `file.buffer`
+ *     and streamed directly to Cloudinary by the controller. Nothing is ever
+ *     written to disk, so this is fully serverless-compatible (Vercel).
  */
 const ALLOWED_IMAGE_MIMES = new Set([
   'image/jpeg',
@@ -39,7 +39,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_FILES = 10;
 
 const upload = multer({
-  dest: 'uploads/tmp/',
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: MAX_FILE_SIZE,
     files:    MAX_FILES,
