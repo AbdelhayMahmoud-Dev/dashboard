@@ -21,6 +21,17 @@
  *   finds next regardless of where npm hoisted it.
  *
  * The script is idempotent: a PATCH_MARKER short-circuits re-application.
+ *
+ * Backend-deployment safety:
+ *   This script is wired into the *root* package.json `postinstall`, so it runs
+ *   for EVERY install that hits the workspace root — including the standalone
+ *   BACKEND deployment on Vercel, which never installs the frontend workspace
+ *   and therefore has no `next`. In that context there is nothing to patch, so
+ *   the script logs a notice and exits 0 instead of failing the install. The
+ *   postinstall must stay at the root (the frontend Vercel deploy installs from
+ *   the root via vercel.json, and npm does not auto-run a workspace's
+ *   postinstall on a root install), so this graceful skip is what keeps the two
+ *   deployments independent.
  */
 
 const fs = require('fs');
@@ -32,9 +43,10 @@ const EXPECTED_NEXT_VERSION = '16.2.6';
 function resolveNextPackageDir() {
   try {
     return path.dirname(require.resolve('next/package.json', { paths: [__dirname] }));
-  } catch (e) {
-    console.error('[patch-next-build] FATAL: could not resolve `next` package.', e.message);
-    process.exit(1);
+  } catch {
+    // `next` is not installed in this context. Return null so the caller can
+    // skip cleanly — this is the expected case for the backend-only deployment.
+    return null;
   }
 }
 
@@ -67,6 +79,18 @@ function applyPatch({ file, original, patched }) {
 }
 
 const nextDir = resolveNextPackageDir();
+
+// No `next` in this install (e.g. the standalone backend deployment, which runs
+// this root postinstall but installs only backend dependencies). Nothing to
+// patch — skip cleanly so `npm install` succeeds.
+if (!nextDir) {
+  console.log(
+    '[patch-next-build] `next` is not installed in this context ' +
+    '(e.g. a backend-only deployment) — nothing to patch, skipping.'
+  );
+  process.exit(0);
+}
+
 const installedVersion = require(path.join(nextDir, 'package.json')).version;
 
 if (installedVersion !== EXPECTED_NEXT_VERSION) {
