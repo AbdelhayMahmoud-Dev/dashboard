@@ -10,10 +10,7 @@
     "build:frontend": "npm run build --workspace=frontend",
     "build:backend": "npm run build --workspace=backend",
     "install:all": "npm install && npm install --prefix frontend && npm install --prefix backend",
-    "//postinstall": "Applies frontend/patches/* to the workspace-hoisted node_modules. patch-package lives at the workspace root because npm hoists `next` here on workspace installs; running patch-package from frontend/ would miss it. The --patch-dir flag points it at the patches directory that ships with the frontend workspace. On Vercel (where install also runs from the workspace root via vercel.json), this same hook applies the patch to the same hoisted location — one mechanism, both environments.",
-    "postinstall": "patch-package --patch-dir frontend/patches"
-  },
-  "devDependencies": {
-    "patch-package": "^8.0.1"
+    "//postinstall": "Applies the Next.js 16.2.6 workStore fix via a custom Node script (no external binary). The script uses require.resolve('next/package.json') from frontend/scripts/, which walks the standard Node module-resolution chain and finds `next` regardless of whether npm hoists it to <repo>/node_modules (workspace install — local and Vercel-with-vercel.json) or installs it locally at frontend/node_modules (Vercel-with-RootDir=frontend). patch-package was removed because (a) its binary lives in devDependencies which Vercel's prod install omits, surfacing as `patch-package: command not found` (exit 127), and (b) it resolves <cwd>/node_modules/<pkg> only and silently fails when npm hoisting puts the package elsewhere.",
+    "postinstall": "node frontend/scripts/patch-next-build.js"
   }
 }
