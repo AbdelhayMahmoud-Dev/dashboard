@@ -21,7 +21,11 @@ function getHealthUrl(): string {
 
 async function probeHealth(url: string): Promise<true> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3000);
+  // 8s, not 3s: a Vercel serverless cold start plus the backend's MongoDB
+  // serverSelectionTimeoutMS (5s) can legitimately exceed 3s on the first hit,
+  // which previously made the banner flash "offline" intermittently on a
+  // perfectly healthy backend.
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const r = await fetch(url, { signal: controller.signal, cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

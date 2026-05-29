@@ -63,16 +63,27 @@ app.disable('x-powered-by');
  * silently blocked — surfacing on the frontend as the generic "Cannot reach
  * the server" because axios never sees a response.
  */
+/**
+ * Strip trailing slashes so "https://app.com/" and "https://app.com" compare
+ * equal. A trailing slash in CLIENT_URL is the single most common reason a
+ * correctly-configured origin still gets rejected — the browser's Origin header
+ * never has one, so an exact string match silently fails.
+ */
+function normalizeOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
 function isAllowedOrigin(origin: string | undefined): boolean {
   // Same-origin and non-browser callers (curl, Postman, health probes) — allow.
   if (!origin) return true;
 
-  const allowed = env.CLIENT_URL.split(',').map((s) => s.trim()).filter(Boolean);
-  if (allowed.includes(origin)) return true;
+  const candidate = normalizeOrigin(origin);
+  const allowed = env.CLIENT_URL.split(',').map(normalizeOrigin).filter(Boolean);
+  if (allowed.includes(candidate)) return true;
 
   if (!env.isProd) {
     try {
-      const url = new URL(origin);
+      const url = new URL(candidate);
       const isLocalHost =
         url.hostname === 'localhost' ||
         url.hostname === '127.0.0.1' ||
@@ -90,7 +101,13 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (isAllowedOrigin(origin)) return callback(null, true);
-      callback(new Error(`CORS: origin "${origin}" not in allowlist (CLIENT_URL=${env.CLIENT_URL})`));
+      // Do NOT throw here. Throwing yields a 500 with no CORS headers and floods
+      // the logs on every rejected request (the "intermittent CORS errors" you
+      // saw). Log once and signal "not allowed" — the response simply omits the
+      // CORS headers and the browser blocks the read, which is the correct
+      // behaviour for a disallowed origin.
+      logger.warn(`CORS: rejected origin "${origin}" (allowlist CLIENT_URL=${env.CLIENT_URL})`);
+      callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
